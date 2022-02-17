@@ -1,0 +1,60 @@
+<launch>
+
+    <!--Bloco 1: argumentos do launch file.-->
+    <arg name="model" default="$(env TURTLEBOT3_MODEL)" doc="model type [burger, waffle, waffle_pi]"/>
+    <arg name="player_name_1" default="red1"/>
+    <arg name="player_name_2" default="green1"/>
+    <arg name="player_name_3" default="blue1"/>
+    <arg name="player_color_1" default="Red"/>
+    <arg name="player_color_2" default="Green"/>
+    <arg name="player_color_3" default="Blue"/>
+    <arg name="x_pos_1" default="5.0"/>
+    <arg name="y_pos_1" default="5.0"/>
+    <arg name="z_pos_1" default="0.0"/>
+    <arg name="x_pos_2" default="-5.0"/>
+    <arg name="y_pos_2" default="5.0"/>
+    <arg name="z_pos_2" default="0.0"/>
+    <arg name="x_pos_3" default="5.0"/>
+    <arg name="y_pos_3" default="-5.0"/>
+    <arg name="z_pos_3" default="0.0"/>
+
+    <!--Bloco 2: carregar parametros exteriores ao launch file.-->
+    <rosparam command="load" file="$(find p_mcarvalho_bringup)/params/game.yaml"/>
+
+    <!--Bloco 3: Iniciar robo 1.-->
+    <group ns="$(arg player_name_1)">
+        <!--Include do bringup.launch-->
+        <include file="$(find p_mcarvalho_bringup)/launch/tp3_bringup.launch">
+            <arg name="player_name" value="$(arg player_name_1)"/>
+            <arg name="player_color" value="$(arg player_color_1)"/>
+            <arg name="x_pos" value="$(arg x_pos_1)"/>
+            <arg name="y_pos" value="$(arg y_pos_1)"/>
+            <arg name="z_pos" value="$(arg z_pos_1)"/>
+        </include>
+    </group>
+    
+    <!--Bloco 4: Iniciar robo 2.-->
+    <!-- <group ns="$(arg player_name_2)"> -->
+        <!-- Include do bringup.launch -->
+        <!-- <include file="$(find p_mcarvalho_bringup)/launch/tp3_bringup.launch">
+            <arg name="player_name" value="$(arg player_name_2)"/>
+            <arg name="player_color" value="$(arg player_color_2)"/>
+            <arg name="x_pos" value="$(arg x_pos_2)"/>
+            <arg name="y_pos" value="$(arg y_pos_2)"/>
+            <arg name="z_pos" value="$(arg z_pos_2)"/>
+        </include>
+    </group> -->
+
+    <!--Bloco 5: Iniciar robo 3.-->
+    <!-- <group ns="$(arg player_name_3)"> -->
+        <!--Include do bringup.launch-->
+        <!-- <include file="$(find p_mcarvalho_bringup)/launch/tp3_bringup.launch">
+            <arg name="player_name" value="$(arg player_name_3)"/>
+            <arg name="player_color" value="$(arg player_color_3)"/>
+            <arg name="x_pos" value="$(arg x_pos_3)"/>
+            <arg name="y_pos" value="$(arg y_pos_3)"/>
+            <arg name="z_pos" value="$(arg z_pos_3)"/>
+        </include>
+    </group> -->
+
+</launch>
