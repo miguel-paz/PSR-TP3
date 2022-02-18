@@ -31,7 +31,7 @@
 
     <group if="$(arg visualize)">
         <!--Include do visualize.launch-->
-        <include file="$(find p_mcarvalho_bringup)/launch/visualize.launch">
+        <include file="$(find p_mcarvalho_bringup)/launch/tp3_visualize.launch">
         </include>
     </group>
 
