@@ -2,6 +2,9 @@
 import copy
 import math
 import cv2
+import numpy as np
+import json
+import os
 from cv_bridge import CvBridge
 import rospy
 import tf2_ros
@@ -14,39 +17,52 @@ class Driver:
 
     def __init__(self):
 
+        folder = os.getcwd() + '/src/p_mcarvalho_player/src/'
+
         self.name = rospy.get_name()
         self.name = self.name.strip('/') # remove initial /
-        print(self.name)
-
         color = self.name.split('_', 1)[0]
-        print(color)
 
         if 'red' in color:
-            self.allies = rospy.get_param('red_players')
-            self.allies_color = 'red'
-            self.hunters = rospy.get_param('blue_players')
-            self.hunters_color = 'blue'
-            self.preys = rospy.get_param('green_players')
-            self.preys_color = 'green'
+            self.ally_color = 'red'
+            self.hunter_color = 'blue'
+            self.prey_color = 'green'
+            self.ally_color_bgr = (0,0,255)
+            self.hunter_color_bgr = (255,0,0)
+            self.prey_color_bgr = (0,255,0)
         elif 'green' in color:
-            self.allies = rospy.get_param('green_players')
-            self.allies_color = 'green'
-            self.hunters = rospy.get_param('red_players')
-            self.hunters_color = 'red'
-            self.preys = rospy.get_param('blue_players')
-            self.preys_color = 'blue'
+            self.ally_color = 'green'
+            self.hunter_color = 'red'
+            self.prey_color = 'blue'
+            self.ally_color_bgr = (0,255,0)
+            self.hunter_color_bgr = (0,0,255)
+            self.prey_color_bgr = (255,0,0)
         elif 'blue' in color:
-            self.allies = rospy.get_param('blue_players')
-            self.allies_color = 'blue'
-            self.hunters = rospy.get_param('green_players')
-            self.hunters_color = 'green'
-            self.preys = rospy.get_param('red_players')
-            self.preys_color = 'red'
+            self.ally_color = 'blue'
+            self.hunter_color = 'green'
+            self.prey_color = 'red'
+            self.ally_color_bgr = (255,0,0)
+            self.hunter_color_bgr = (0,255,0)
+            self.prey_color_bgr = (0,0,255)
+        else:
+            print('Color ' + color + ' not recognized, shutting down')
+            quit()
 
-        print('My player name is ' + self.name + ', I am team ' + self.allies_color + ' I am hunting ' + str(self.preys) + ' and fleeing from ' + str(self.hunters))
+        self.allies = rospy.get_param(self.ally_color + '_players')
+        self.hunters = rospy.get_param(self.hunter_color + '_players')
+        self.preys = rospy.get_param(self.prey_color + '_players')
+
+        print('My player name is ' + self.name + ', I am team ' + self.ally_color + ' I am hunting ' + str(self.preys) + ' and fleeing from ' + str(self.hunters))
+
+        self.ally_limits = self.convert_to_json(folder + self.ally_color + '_limits.json')
+        self.hunter_limits = self.convert_to_json(folder + self.hunter_color + '_limits.json')
+        self.prey_limits = self.convert_to_json(folder + self.prey_color + '_limits.json')
         
-        self.front_camera_subscriber = rospy.Subscriber('/red1/red1/camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
+        self.ally_front = False
+        self.hunter_front = False
+        self.prey_front = False
 
+        self.front_camera_subscriber = rospy.Subscriber('/' + self.name + '/' + self.name + '/camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
         self.bridge = CvBridge()
 
         self.state = 'wandering'
@@ -66,15 +82,13 @@ class Driver:
 
         self.goal_subscriber = rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goalReceivedCallback)
 
+    def convert_to_json(self, filename):
+        with open(filename) as f_in:
+            return json.load(f_in)
+
     def overseer(self):
         #check_back_camera()
         #check_front_camera()
-        pass
-
-    def check_back_camera(self):
-        pass
-
-    def check_front_camera(self):
         pass
 
     def goalReceivedCallback(self, msg):
@@ -82,7 +96,6 @@ class Driver:
         print('Received new goal on frame id' + msg.header.frame_id)
         target_frame = self.name + '/odom'
         try:
-
             self.goal = self.tf_buffer.transform(msg, target_frame, rospy.Duration(1))
             self.goal_active = True
             rospy.logwarn('Setting new goal')
@@ -96,16 +109,71 @@ class Driver:
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except CvBridgeError as e:
             print(e)
-   
-        (rows,cols,channels) = cv_image.shape
-        if cols > 60 and rows > 60 :
-            cv2.circle(cv_image, (50,50), 10, 255)
-   
-        cv2.imshow("Image window", cv_image)
-        cv2.waitKey(3)
-        #cv2.imwrite('test.jpg', image)
-        print('got image')
 
+        self.ally_front = False
+        self.hunter_front = False
+        self.prey_front = False
+   
+        ally_mins = np.array([self.ally_limits['limits']['b']['min'], self.ally_limits['limits']['g']['min'], self.ally_limits['limits']['r']['min']])
+        ally_maxs = np.array([self.ally_limits['limits']['b']['max'], self.ally_limits['limits']['g']['max'], self.ally_limits['limits']['r']['max']])
+        hunter_mins = np.array([self.hunter_limits['limits']['b']['min'], self.hunter_limits['limits']['g']['min'], self.hunter_limits['limits']['r']['min']])
+        hunter_maxs = np.array([self.hunter_limits['limits']['b']['max'], self.hunter_limits['limits']['g']['max'], self.hunter_limits['limits']['r']['max']])
+        prey_mins = np.array([self.prey_limits['limits']['b']['min'], self.prey_limits['limits']['g']['min'], self.prey_limits['limits']['r']['min']])
+        prey_maxs = np.array([self.prey_limits['limits']['b']['max'], self.prey_limits['limits']['g']['max'], self.prey_limits['limits']['r']['max']])
+
+        ally_mask = cv2.inRange(cv_image, ally_mins, ally_maxs)
+        hunter_mask = cv2.inRange(cv_image, hunter_mins, hunter_maxs)
+        prey_mask = cv2.inRange(cv_image, prey_mins, prey_maxs)
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(10,10))
+
+        ally_mask = cv2.morphologyEx(ally_mask,cv2.MORPH_CLOSE,kernel)
+        hunter_mask = cv2.morphologyEx(hunter_mask,cv2.MORPH_CLOSE,kernel)
+        prey_mask = cv2.morphologyEx(prey_mask,cv2.MORPH_CLOSE,kernel)
+
+        output = cv2.connectedComponentsWithStats(ally_mask, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 700:
+                self.ally_front = True
+                # draw cross on centroid
+                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
+
+        output = cv2.connectedComponentsWithStats(hunter_mask, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 700:     
+                self.hunter_front = True
+                # draw cross on centroid
+                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
+
+        output = cv2.connectedComponentsWithStats(prey_mask, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 700:
+                self.prey_front = True
+                # draw cross on centroid
+                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+
+        cv2.imshow("Front Camera", cv_image)
+        cv2.imshow('Front Camera Ally Detector', ally_mask)
+        cv2.imshow('Front Camera Hunter Detector', hunter_mask)
+        cv2.imshow('Front Camera Prey Detector', prey_mask)
+
+        cv2.waitKey(3)
+        
     def driveStraight(self, minumum_speed=0.1, maximum_speed=1.5):
         goal_copy = copy.deepcopy(self.goal)  # make sure we don't change the stamp field of the goal
         goal_copy.header.stamp = rospy.Time.now()
