@@ -16,7 +16,7 @@
     <arg name="y_pos_2" default="5.0"/>
     <arg name="z_pos_2" default="0.0"/>
     <arg name="x_pos_3" default="5.0"/>
-    <arg name="y_pos_3" default="-5.0"/>
+    <arg name="y_pos_3" default="0.0"/>
     <arg name="z_pos_3" default="0.0"/>
 
     <!--Bloco 2: carregar parametros exteriores ao launch file.-->
@@ -36,27 +36,27 @@
     </group>
     
     <!--Bloco 4: Iniciar robo 2.-->
-    <!-- <group ns="$(arg player_name_2)"> -->
+    <group ns="$(arg player_name_2)">
         <!-- Include do bringup.launch -->
-        <!-- <include file="$(find p_mcarvalho_bringup)/launch/tp3_bringup.launch">
+        <include file="$(find p_mcarvalho_bringup)/launch/tp3_bringup.launch">
             <arg name="player_name" value="$(arg player_name_2)"/>
             <arg name="player_color" value="$(arg player_color_2)"/>
             <arg name="x_pos" value="$(arg x_pos_2)"/>
             <arg name="y_pos" value="$(arg y_pos_2)"/>
             <arg name="z_pos" value="$(arg z_pos_2)"/>
         </include>
-    </group> -->
+    </group>
 
     <!--Bloco 5: Iniciar robo 3.-->
-    <!-- <group ns="$(arg player_name_3)"> -->
+    <group ns="$(arg player_name_3)">
         <!--Include do bringup.launch-->
-        <!-- <include file="$(find p_mcarvalho_bringup)/launch/tp3_bringup.launch">
+        <include file="$(find p_mcarvalho_bringup)/launch/tp3_bringup.launch">
             <arg name="player_name" value="$(arg player_name_3)"/>
             <arg name="player_color" value="$(arg player_color_3)"/>
             <arg name="x_pos" value="$(arg x_pos_3)"/>
             <arg name="y_pos" value="$(arg y_pos_3)"/>
             <arg name="z_pos" value="$(arg z_pos_3)"/>
         </include>
-    </group> -->
+    </group>
 
 </launch>
