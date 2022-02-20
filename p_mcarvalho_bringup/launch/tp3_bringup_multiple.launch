@@ -1,5 +1,4 @@
 <launch>
-
     <!--Bloco 1: argumentos do launch file.-->
     <arg name="model" default="$(env TURTLEBOT3_MODEL)" doc="model type [burger, waffle, waffle_pi]"/>
     <arg name="visualize" default="true"/>
@@ -26,6 +25,7 @@
     <group ns="$(arg player_name_1)">
         <!--Include do bringup.launch-->
         <include file="$(find p_mcarvalho_bringup)/launch/tp3_bringup.launch">
+            <arg name="model" value="$(arg model)"/>
             <arg name="visualize" value="$(arg visualize)"/>
             <arg name="player_name" value="$(arg player_name_1)"/>
             <arg name="player_color" value="$(arg player_color_1)"/>
@@ -39,6 +39,7 @@
     <group ns="$(arg player_name_2)">
         <!-- Include do bringup.launch -->
         <include file="$(find p_mcarvalho_bringup)/launch/tp3_bringup.launch">
+            <arg name="model" value="$(arg model)"/>
             <arg name="player_name" value="$(arg player_name_2)"/>
             <arg name="player_color" value="$(arg player_color_2)"/>
             <arg name="x_pos" value="$(arg x_pos_2)"/>
@@ -51,6 +52,7 @@
     <group ns="$(arg player_name_3)">
         <!--Include do bringup.launch-->
         <include file="$(find p_mcarvalho_bringup)/launch/tp3_bringup.launch">
+            <arg name="model" value="$(arg model)"/>
             <arg name="player_name" value="$(arg player_name_3)"/>
             <arg name="player_color" value="$(arg player_color_3)"/>
             <arg name="x_pos" value="$(arg x_pos_3)"/>
@@ -58,5 +60,4 @@
             <arg name="z_pos" value="$(arg z_pos_3)"/>
         </include>
     </group>
-
 </launch>
