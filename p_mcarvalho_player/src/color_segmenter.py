@@ -36,7 +36,7 @@ def main():
     cv2.createTrackbar('MaxR', wname_segmenter, 256, 256, onTrackbar)
 
     folder = 'images/'
-    image = cv2.imread(folder + 'test5.jpg')
+    image = cv2.imread(folder + 'test_multiple.jpeg')
     
     while True:
 
