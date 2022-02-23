@@ -11,13 +11,9 @@
 
     <param name="tf_prefix" value="$(arg player_name)"></param>
     <!--Bloco 3: Carregamento do xacro do robot para o parâmetro robot_description.-->
-    <param name="robot_description" command="$(find xacro)/xacro --inorder $(find p_mcarvalho_description)/urdf/p_mcarvalho.urdf.xacro player_name:=$(arg player_name) player_color:=$(arg player_color)" />
+    <param name="robot_description" command="$(find xacro)/xacro --inorder $(find p_mcarvalho_description)/urdf/tp3_p_mcarvalho.urdf.xacro player_name:=$(arg player_name) player_color:=$(arg player_color)" />
 
     <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"/>
-
-    <!--Include do visualize.launch-->
-    <!-- <include file="$(find p_mcarvalho_bringup)/launch/visualize.launch">
-    </include> -->
 
     <!--Include do spawn.launch-->
     <include file="$(find p_mcarvalho_bringup)/launch/spawn.launch">
