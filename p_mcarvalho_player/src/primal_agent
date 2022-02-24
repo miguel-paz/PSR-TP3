@@ -71,8 +71,8 @@ class Driver:
         self.prey_back_left = False
         self.prey_back_right = False
 
-        self.front_camera_subscriber = rospy.Subscriber('/' + self.name + '/' + self.name + '/front_camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
-        self.back_camera_subscriber = rospy.Subscriber('/' + self.name + '/' + self.name + '/back_camera/rgb/image_raw', Image, self.backCameraReceivedCallback)
+        self.front_camera_subscriber = rospy.Subscriber('/' + self.name + '/front_camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
+        self.back_camera_subscriber = rospy.Subscriber('/' + self.name + '/back_camera/rgb/image_raw', Image, self.backCameraReceivedCallback)
         
         self.bridge = CvBridge()
 
@@ -84,7 +84,7 @@ class Driver:
         self.angle = 0
         self.speed = 0
 
-        self.publisher_command = rospy.Publisher( '/' + self.name + '/cmd_vel', Twist, queue_size=1)
+        self.publisher_command = rospy.Publisher('/' + self.name + '/cmd_vel', Twist, queue_size=1)
 
         self.tf_buffer = tf2_ros.Buffer()
         self.listener = tf2_ros.TransformListener(self.tf_buffer)
@@ -203,6 +203,7 @@ class Driver:
         cv2.imshow('Front Camera Prey Detector', prey_mask)
         #cv2.imwrite('test_multiple.jpeg',cv_image)
 
+        
         cv2.waitKey(3)
 
     def backCameraReceivedCallback(self, msg):
