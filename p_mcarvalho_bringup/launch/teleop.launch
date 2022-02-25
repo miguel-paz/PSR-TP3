@@ -3,8 +3,8 @@
     <arg name="player_name" default="p_mcarvalho"/>
 
     <group ns="$(arg player_name)">
-        <node pkg="p_mcarvalho_bringup" type="myteleop.py" name="myteleop"  output="screen">
-        <param name="~default_topic" value="/$(arg player_name)/cmd_vel"></param>
+        <node pkg="p_mcarvalho_player" type="teleop_movement_processing.py" name="myteleop"  output="screen">
+        <param name="~default_topic" value="/cmd_vel"></param>
         </node>
     </group>
 
