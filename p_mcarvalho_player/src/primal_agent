@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import copy
 import math
+import random
 import cv2
 import numpy as np
 import json
@@ -10,14 +11,23 @@ import rospy
 import tf2_ros
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist, PoseStamped
+from sensor_msgs.msg import LaserScan
 import tf2_geometry_msgs  # **Do not use geometry_msgs. Use this instead for PoseStamped
 
+from sklearn.cluster import DBSCAN
+import numpy as np
+
+MAX_LIN_VEL = 2.22
+MAX_ANG_VEL = 2.84
+
+LIN_VEL_STEP_SIZE = 0.05
+ANG_VEL_STEP_SIZE = 0.2
 
 class Driver:
 
     def __init__(self):
 
-        folder = os.getcwd() + '/src/p_mcarvalho_player/src/'
+        folder = os.getcwd() + '/p_mcarvalho_player/src/'
 
         self.name = rospy.get_name()
         self.name = self.name.strip('/') # remove initial /
@@ -71,8 +81,8 @@ class Driver:
         self.prey_back_left = False
         self.prey_back_right = False
 
-        self.front_camera_subscriber = rospy.Subscriber('/' + self.name + '/' + self.name + '/front_camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
-        self.back_camera_subscriber = rospy.Subscriber('/' + self.name + '/' + self.name + '/back_camera/rgb/image_raw', Image, self.backCameraReceivedCallback)
+        self.front_camera_subscriber = rospy.Subscriber('/' + self.name + '/front_camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
+        #self.back_camera_subscriber = rospy.Subscriber('/' + self.name + '/back_camera/rgb/image_raw', Image, self.backCameraReceivedCallback)
         
         self.bridge = CvBridge()
 
@@ -83,15 +93,22 @@ class Driver:
 
         self.angle = 0
         self.speed = 0
+        
+        self.target_linear_vel = 0.0
+        self.target_angular_vel = 0.0
+        self.control_linear_vel = 0.0
+        self.control_angular_vel = 0.0
 
-        self.publisher_command = rospy.Publisher( '/' + self.name + '/cmd_vel', Twist, queue_size=1)
+        self.publisher_command = rospy.Publisher('/' + self.name + '/cmd_vel', Twist, queue_size=1)
 
         self.tf_buffer = tf2_ros.Buffer()
         self.listener = tf2_ros.TransformListener(self.tf_buffer)
 
-        self.timer = rospy.Timer(rospy.Duration(0.1), self.sendCommandCallback)
+        #self.timer = rospy.Timer(rospy.Duration(0.1), self.sendCommandCallback)
 
         self.goal_subscriber = rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goalReceivedCallback)
+        
+        self.scan_subscriber = rospy.Subscriber('/' + self.name + '/scan', LaserScan, self.scanReceivedCallBack)
 
     def convert_to_json(self, filename):
         with open(filename) as f_in:
@@ -293,6 +310,85 @@ class Driver:
         cv2.imshow('Back Camera Prey Detector', prey_mask)
 
         cv2.waitKey(3)
+    
+    def makeSimpleProfile(self, output, input, slop):
+        if input > output:
+            output = min( input, output + slop )
+        elif input < output:
+            output = max( input, output - slop )
+        else:
+            output = input
+
+        return output
+    
+    def scanReceivedCallBack(self, scan):
+        # convert from polar coordinates to cartesian and fill the point cloud
+        points = []
+        z = 0
+        for idx, r in enumerate(scan.ranges):
+            if r >= scan.range_min and r <= scan.range_max:
+                theta = scan.angle_min + scan.angle_increment * idx
+                x = r * math.cos(theta)
+                y = r * math.sin(theta)
+                points.append([x, y, z])
+        
+        points = np.array(points)
+        
+        clustering = DBSCAN(eps=0.5, min_samples=1).fit(points)
+        
+        robot_labels = []
+        for label in set(clustering.labels_):
+            if 2<= len([l for l in clustering.labels_ if l==label]) <=20:
+                robot_labels.append(label)
+        
+        robots = [] # coordinates of possible robots 
+        for rl in robot_labels:
+            robot_points = [points[i,:] for i in range(len(clustering.labels_)) if clustering.labels_[i]==rl]
+            x = sum([p[0] for p in robot_points])/len(robot_points)
+            y = sum([p[1] for p in robot_points])/len(robot_points)
+            z = sum([p[2] for p in robot_points])/len(robot_points)
+            robots.append([x, y, z])
+
+        center_dist=scan.range_max
+        for r in scan.ranges[0:int(math.pi/24/scan.angle_increment)]+scan.ranges[int(47*math.pi/24/scan.angle_increment):]:
+            if r >= scan.range_min and r <= scan.range_max and r < center_dist:
+                center_dist = r
+        
+        right_dist=scan.range_max
+        for r in scan.ranges[int(1.5*math.pi/scan.angle_increment):int(11*math.pi/6/scan.angle_increment)]:
+            if r >= scan.range_min and r <= scan.range_max and r < right_dist:
+                right_dist = r
+        
+        left_dist=scan.range_max
+        for r in scan.ranges[int(math.pi/6/scan.angle_increment):int(0.5*math.pi/scan.angle_increment)]:
+            if r >= scan.range_min and r <= scan.range_max and r < left_dist:
+                left_dist = r
+        
+        if center_dist>2.5 and left_dist>0.3 and right_dist>0.3:
+            self.target_angular_vel = 0
+            
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.7, (LIN_VEL_STEP_SIZE/2.0))
+            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, 0, (ANG_VEL_STEP_SIZE/2.0))
+
+        else:
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.2, (LIN_VEL_STEP_SIZE/2.0))
+            
+            if left_dist<2 or right_dist<2:
+                if left_dist>right_dist:
+                    self.target_angular_vel=0.5
+                else:
+                    self.target_angular_vel=-0.5
+            
+            elif not self.target_angular_vel:
+                self.target_angular_vel = 0.5 if random.random()>0.5 else -0.5
+                
+            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+
+        twist = Twist()
+        twist.linear.x = self.control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
+        twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = self.control_angular_vel
+        self.publisher_command.publish(twist)
+        print("A")
         
     def driveStraight(self, minumum_speed=0.1, maximum_speed=1.5):
         goal_copy = copy.deepcopy(self.goal)  # make sure we don't change the stamp field of the goal
@@ -304,7 +400,7 @@ class Driver:
 
         print('Transforming pose')
         goal_in_base_link = self.tf_buffer.transform(goal_copy, self.name + '/base_footprint', rospy.Duration(1))
-        print('Pose trasnformed')
+        print('Pose transformed')
 
         x = goal_in_base_link.pose.position.x
         y = goal_in_base_link.pose.position.y
@@ -340,17 +436,6 @@ def main():
 
     driver = Driver()
     rospy.spin()
-
-    # ---------------------------------------------------
-    # Execution
-    # ---------------------------------------------------
-    # while not rospy.is_shutdown():
-    #
-    #     # create a dog message to sent
-
-    # ---------------------------------------------------
-    # Termination
-    # ---------------------------------------------------
 
 
 if __name__ == '__main__':
