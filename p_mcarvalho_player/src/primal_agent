@@ -220,6 +220,7 @@ class Driver:
         cv2.imshow('Front Camera Prey Detector', prey_mask)
         #cv2.imwrite('test_multiple.jpeg',cv_image)
 
+        
         cv2.waitKey(3)
 
     def backCameraReceivedCallback(self, msg):
