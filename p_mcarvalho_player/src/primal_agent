@@ -331,24 +331,35 @@ class Driver:
                 theta = scan.angle_min + scan.angle_increment * idx
                 x = r * math.cos(theta)
                 y = r * math.sin(theta)
-                points.append([x, y, z])
+                points.append([x, y, z, theta])
         
         points = np.array(points)
         
-        clustering = DBSCAN(eps=0.5, min_samples=1).fit(points)
+        clustering = DBSCAN(eps=0.5, min_samples=1).fit(points[:3,:])
         
         robot_labels = []
         for label in set(clustering.labels_):
             if 2<= len([l for l in clustering.labels_ if l==label]) <=20:
                 robot_labels.append(label)
         
-        robots = [] # coordinates of possible robots 
+        self.hunters = [] # coordinates of hunters
+        self.preys = [] # coordinates of preys
+        self.allies = [] # coordinates of allies
         for rl in robot_labels:
             robot_points = [points[i,:] for i in range(len(clustering.labels_)) if clustering.labels_[i]==rl]
             x = sum([p[0] for p in robot_points])/len(robot_points)
             y = sum([p[1] for p in robot_points])/len(robot_points)
             z = sum([p[2] for p in robot_points])/len(robot_points)
-            robots.append([x, y, z])
+            theta = sum([p[3] for p in robot_points])/len(robot_points)
+            
+            if (0<=theta<=math.pi/2 and self.hunter_front_left) or (math.pi/2<=theta<=math.pi and self.hunter_back_left) or (math.pi<=theta<=3/2*math.pi and self.hunter_back_right) or (3/2*math.pi<=theta<=2*math.pi and self.hunter_front_right):
+                self.hunters.append([x,y,z,theta])
+            
+            if (0<=theta<=math.pi/2 and self.prey_front_left) or (math.pi/2<=theta<=math.pi and self.prey_back_left) or (math.pi<=theta<=3/2*math.pi and self.prey_back_right) or (3/2*math.pi<=theta<=2*math.pi and self.prey_front_right):
+                self.preys.append([x,y,z,theta])
+                
+            if (0<=theta<=math.pi/2 and self.ally_front_left) or (math.pi/2<=theta<=math.pi and self.ally_back_left) or (math.pi<=theta<=3/2*math.pi and self.ally_back_right) or (3/2*math.pi<=theta<=2*math.pi and self.ally_front_right):
+                self.allies.append([x,y,z,theta])
 
         self.center_dist=scan.range_max
         for r in scan.ranges[0:int(math.pi/24/scan.angle_increment)]+scan.ranges[int(47*math.pi/24/scan.angle_increment):]:
@@ -404,6 +415,10 @@ class Driver:
         twist.angular.z = self.angle
         self.publisher_command.publish(twist)
         """
+        
+        print("allies: ", self.allies)
+        print("hunters: ", self.hunters)
+        print("preys: ", self.preys)
         
         if self.state == "wandering":
             if self.center_dist>2.5 and self.left_dist>0.3 and self.right_dist>0.3:
