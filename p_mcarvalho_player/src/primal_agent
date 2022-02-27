@@ -81,11 +81,16 @@ class Driver:
         self.prey_back_left = False
         self.prey_back_right = False
 
-        self.front_camera_subscriber = rospy.Subscriber('/' + self.name + '/front_camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
-        #self.back_camera_subscriber = rospy.Subscriber('/' + self.name + '/back_camera/rgb/image_raw', Image, self.backCameraReceivedCallback)
-        
+        self.front_camera_image = None
+        self.back_camera_image = None
+
         self.bridge = CvBridge()
 
+        self.front_camera_subscriber = rospy.Subscriber('/' + self.name + '/front_camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
+        self.back_camera_subscriber = rospy.Subscriber('/' + self.name + '/back_camera/rgb/image_raw', Image, self.backCameraReceivedCallback)
+        
+        rospy.Timer(rospy.Duration(2),self.timerCallback)
+        
         self.state = 'wandering'
 
         self.goal = PoseStamped()
@@ -132,97 +137,6 @@ class Driver:
             rospy.logerr('Could not transform goal from ' + msg.header.frame_id + ' to ' + target_frame + '. Will ignore this goal.')
 
 
-    def frontCameraReceivedCallback(self, msg):
-        try:
-            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-        except CvBridgeError as e:
-            print(e)
-            return
-
-        width = cv_image.shape[1]
-
-        self.ally_front_left = False
-        self.ally_front_right = False
-        self.hunter_front_left = False
-        self.hunter_front_right = False
-        self.prey_front_left = False
-        self.prey_front_right = False
-   
-        ally_mins = np.array([self.ally_limits['limits']['b']['min'], self.ally_limits['limits']['g']['min'], self.ally_limits['limits']['r']['min']])
-        ally_maxs = np.array([self.ally_limits['limits']['b']['max'], self.ally_limits['limits']['g']['max'], self.ally_limits['limits']['r']['max']])
-        hunter_mins = np.array([self.hunter_limits['limits']['b']['min'], self.hunter_limits['limits']['g']['min'], self.hunter_limits['limits']['r']['min']])
-        hunter_maxs = np.array([self.hunter_limits['limits']['b']['max'], self.hunter_limits['limits']['g']['max'], self.hunter_limits['limits']['r']['max']])
-        prey_mins = np.array([self.prey_limits['limits']['b']['min'], self.prey_limits['limits']['g']['min'], self.prey_limits['limits']['r']['min']])
-        prey_maxs = np.array([self.prey_limits['limits']['b']['max'], self.prey_limits['limits']['g']['max'], self.prey_limits['limits']['r']['max']])
-
-        ally_mask = cv2.inRange(cv_image, ally_mins, ally_maxs)
-        hunter_mask = cv2.inRange(cv_image, hunter_mins, hunter_maxs)
-        prey_mask = cv2.inRange(cv_image, prey_mins, prey_maxs)
-
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(10,10))
-
-        ally_mask = cv2.morphologyEx(ally_mask,cv2.MORPH_CLOSE,kernel)
-        hunter_mask = cv2.morphologyEx(hunter_mask,cv2.MORPH_CLOSE,kernel)
-        prey_mask = cv2.morphologyEx(prey_mask,cv2.MORPH_CLOSE,kernel)
-
-        output = cv2.connectedComponentsWithStats(ally_mask, 8, cv2.CV_32S)
-        (numLabels, labels, stats, centroids) = output
-
-        for i in range(1, numLabels):
-            area = stats[i, cv2.CC_STAT_AREA]
-            (cX, cY) = centroids[i]
-            cX, cY = int(cX), int(cY)
-            if area > 700:
-                if cX > (width//2):
-                    self.ally_front_right = True
-                else:
-                    self.ally_front_left = True
-                # draw cross on centroid
-                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
-
-        output = cv2.connectedComponentsWithStats(hunter_mask, 8, cv2.CV_32S)
-        (numLabels, labels, stats, centroids) = output
-
-        for i in range(1, numLabels):
-            area = stats[i, cv2.CC_STAT_AREA]
-            (cX, cY) = centroids[i]
-            cX, cY = int(cX), int(cY)
-            if area > 700:
-                if cX > (width//2):
-                    self.hunter_front_right = True
-                    #print('hunter front right')
-                else:
-                    self.hunter_front_left = True
-                    #print('hunter front left')
-                # draw cross on centroid
-                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
-
-        output = cv2.connectedComponentsWithStats(prey_mask, 8, cv2.CV_32S)
-        (numLabels, labels, stats, centroids) = output
-
-        for i in range(1, numLabels):
-            area = stats[i, cv2.CC_STAT_AREA]
-            (cX, cY) = centroids[i]
-            cX, cY = int(cX), int(cY)
-            if area > 700:
-                if cX > (width//2):
-                    self.prey_front_right = True
-                    #print('prey front right')
-                else:
-                    self.prey_front_left = True
-                    #print('prey front left')
-                # draw cross on centroid
-                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
-
-        cv2.imshow('Front Camera', cv_image)
-        cv2.imshow('Front Camera Ally Detector', ally_mask)
-        cv2.imshow('Front Camera Hunter Detector', hunter_mask)
-        cv2.imshow('Front Camera Prey Detector', prey_mask)
-        #cv2.imwrite('test_multiple.jpeg',cv_image)
-
-        
-        cv2.waitKey(3)
-
     def backCameraReceivedCallback(self, msg):
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
@@ -230,7 +144,24 @@ class Driver:
             print(e)
             return
 
-        width = cv_image.shape[1]
+        self.back_camera_image = cv_image.copy()
+        
+    def timerCallback(self, event):
+        
+        if self.front_camera_image is None or self.back_camera_image is None:
+            return
+
+        cv_image_front = self.front_camera_image.copy()
+        cv_image_back = self.back_camera_image.copy()
+
+        width = cv_image_front.shape[1]
+
+        self.ally_front_left = False
+        self.ally_front_right = False
+        self.hunter_front_left = False
+        self.hunter_front_right = False
+        self.prey_front_left = False
+        self.prey_front_right = False
 
         self.ally_back_left = False
         self.ally_back_right = False
@@ -246,17 +177,79 @@ class Driver:
         prey_mins = np.array([self.prey_limits['limits']['b']['min'], self.prey_limits['limits']['g']['min'], self.prey_limits['limits']['r']['min']])
         prey_maxs = np.array([self.prey_limits['limits']['b']['max'], self.prey_limits['limits']['g']['max'], self.prey_limits['limits']['r']['max']])
 
-        ally_mask = cv2.inRange(cv_image, ally_mins, ally_maxs)
-        hunter_mask = cv2.inRange(cv_image, hunter_mins, hunter_maxs)
-        prey_mask = cv2.inRange(cv_image, prey_mins, prey_maxs)
+        #\----FRONT CAMERA----/
+        ally_mask_front = cv2.inRange(cv_image_front, ally_mins, ally_maxs)
+        hunter_mask_front = cv2.inRange(cv_image_front, hunter_mins, hunter_maxs)
+        prey_mask_front = cv2.inRange(cv_image_front, prey_mins, prey_maxs)
 
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(10,10))
 
-        ally_mask = cv2.morphologyEx(ally_mask,cv2.MORPH_CLOSE,kernel)
-        hunter_mask = cv2.morphologyEx(hunter_mask,cv2.MORPH_CLOSE,kernel)
-        prey_mask = cv2.morphologyEx(prey_mask,cv2.MORPH_CLOSE,kernel)
+        ally_mask_front = cv2.morphologyEx(ally_mask_front,cv2.MORPH_CLOSE,kernel)
+        hunter_mask_front = cv2.morphologyEx(hunter_mask_front,cv2.MORPH_CLOSE,kernel)
+        prey_mask_front = cv2.morphologyEx(prey_mask_front,cv2.MORPH_CLOSE,kernel)
 
-        output = cv2.connectedComponentsWithStats(ally_mask, 8, cv2.CV_32S)
+        output = cv2.connectedComponentsWithStats(ally_mask_front, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 700:
+                if cX > (width//2):
+                    self.ally_front_right = True
+                else:
+                    self.ally_front_left = True
+                # draw cross on centroid
+                cv2.putText(cv_image_front, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
+
+        output = cv2.connectedComponentsWithStats(hunter_mask_front, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 700:
+                if cX > (width//2):
+                    self.hunter_front_right = True
+                    #print('hunter front right')
+                else:
+                    self.hunter_front_left = True
+                    #print('hunter front left')
+                # draw cross on centroid
+                cv2.putText(cv_image_front, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
+
+        output = cv2.connectedComponentsWithStats(prey_mask_front, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 700:
+                if cX > (width//2):
+                    self.prey_front_right = True
+                    #print('prey front right')
+                else:
+                    self.prey_front_left = True
+                    #print('prey front left')
+                # draw cross on centroid
+                cv2.putText(cv_image_front, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+
+
+        #\----BACK CAMERA----/
+        ally_mask_back = cv2.inRange(cv_image_back, ally_mins, ally_maxs)
+        hunter_mask_back = cv2.inRange(cv_image_back, hunter_mins, hunter_maxs)
+        prey_mask_back = cv2.inRange(cv_image_back, prey_mins, prey_maxs)
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(10,10))
+
+        ally_mask_back = cv2.morphologyEx(ally_mask_back,cv2.MORPH_CLOSE,kernel)
+        hunter_mask_back = cv2.morphologyEx(hunter_mask_back,cv2.MORPH_CLOSE,kernel)
+        prey_mask_back = cv2.morphologyEx(prey_mask_back,cv2.MORPH_CLOSE,kernel)
+
+        output = cv2.connectedComponentsWithStats(ally_mask_back, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
 
         for i in range(1, numLabels):
@@ -269,9 +262,9 @@ class Driver:
                 else:
                     self.ally_back_left = True
                 # draw cross on centroid
-                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(cv_image_back, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
 
-        output = cv2.connectedComponentsWithStats(hunter_mask, 8, cv2.CV_32S)
+        output = cv2.connectedComponentsWithStats(hunter_mask_back, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
 
         for i in range(1, numLabels):
@@ -286,9 +279,9 @@ class Driver:
                     self.hunter_back_left = True
                     #print('hunter front left')
                 # draw cross on centroid
-                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(cv_image_back, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
 
-        output = cv2.connectedComponentsWithStats(prey_mask, 8, cv2.CV_32S)
+        output = cv2.connectedComponentsWithStats(prey_mask_back, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
 
         for i in range(1, numLabels):
@@ -303,12 +296,18 @@ class Driver:
                     self.prey_back_left = True
                     #print('prey front left')
                 # draw cross on centroid
-                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(cv_image_back, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+        
+        cv2.imshow('Front Camera', cv_image_front)
+        cv2.imshow('Front Camera Ally Detector', ally_mask_front)
+        cv2.imshow('Front Camera Hunter Detector', hunter_mask_front)
+        cv2.imshow('Front Camera Prey Detector', prey_mask_front)
+        #cv2.imwrite('test_multiple.jpeg',cv_image)
 
-        cv2.imshow('Back Camera', cv_image)
-        cv2.imshow('Back Camera Ally Detector', ally_mask)
-        cv2.imshow('Back Camera Hunter Detector', hunter_mask)
-        cv2.imshow('Back Camera Prey Detector', prey_mask)
+        cv2.imshow('Back Camera', cv_image_back)
+        cv2.imshow('Back Camera Ally Detector', ally_mask_back)
+        cv2.imshow('Back Camera Hunter Detector', hunter_mask_back)
+        cv2.imshow('Back Camera Prey Detector', prey_mask_back)
 
         cv2.waitKey(3)
     
