@@ -237,6 +237,7 @@
       <geometry>
         <box size="0.015 0.030 0.027"/>
       </geometry>
+      <material name="dark"/>
     </collision>
   </link>
 
@@ -253,6 +254,41 @@
     <child link="back_camera_rgb_optical_frame"/>
   </joint>
   <link name="back_camera_rgb_optical_frame"/>
+  
+  
+  <joint name="my_movable_joint" type="prismatic">
+    <origin xyz="0 0 0.027" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="moving_link"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="0" upper="0.2" effort="30" velocity="10.0"/>
+  </joint>
 
+  <link name="moving_link">
+    <visual>
+      <origin xyz="0 0 0.027" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.3 0.02 0.02"/>
+      </geometry>
+      <material name="$(arg player_color)"/>
+    </visual>
+
+    <collision>
+      <origin xyz="0 0 0.027" rpy="0 0 0"/>
+      <geometry>
+        <box size="1.0 1.0 0.05"/>
+      </geometry>
+    </collision>
+
+    <inertial>
+      <mass value="0.114" />
+      <origin xyz="0 0 0" />
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0"
+               iyy="0.001" iyz="0.0"
+               izz="0.001" />
+    </inertial>
+  </link>
+
+  
 </robot>
 
