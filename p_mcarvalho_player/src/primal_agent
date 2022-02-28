@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import copy
 import math
+import random
 import cv2
 import numpy as np
 import json
@@ -10,14 +11,23 @@ import rospy
 import tf2_ros
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist, PoseStamped
+from sensor_msgs.msg import LaserScan
 import tf2_geometry_msgs  # **Do not use geometry_msgs. Use this instead for PoseStamped
 
+from sklearn.cluster import DBSCAN
+import numpy as np
+
+MAX_LIN_VEL = 2.22
+MAX_ANG_VEL = 2.84
+
+LIN_VEL_STEP_SIZE = 0.05
+ANG_VEL_STEP_SIZE = 0.2
 
 class Driver:
 
     def __init__(self):
 
-        folder = os.getcwd() + '/src/p_mcarvalho_player/src/'
+        folder = os.getcwd() + '/p_mcarvalho_player/src/'
 
         self.name = rospy.get_name()
         self.name = self.name.strip('/') # remove initial /
@@ -71,11 +81,16 @@ class Driver:
         self.prey_back_left = False
         self.prey_back_right = False
 
+        self.front_camera_image = None
+        self.back_camera_image = None
+
+        self.bridge = CvBridge()
+
         self.front_camera_subscriber = rospy.Subscriber('/' + self.name + '/front_camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
         self.back_camera_subscriber = rospy.Subscriber('/' + self.name + '/back_camera/rgb/image_raw', Image, self.backCameraReceivedCallback)
         
-        self.bridge = CvBridge()
-
+        rospy.Timer(rospy.Duration(0.1),self.timerCallback)
+        
         self.state = 'wandering'
 
         self.goal = PoseStamped()
@@ -83,6 +98,11 @@ class Driver:
 
         self.angle = 0
         self.speed = 0
+        
+        self.target_linear_vel = 0.0
+        self.target_angular_vel = 0.0
+        self.control_linear_vel = 0.0
+        self.control_angular_vel = 0.0
 
         self.publisher_command = rospy.Publisher('/' + self.name + '/cmd_vel', Twist, queue_size=1)
 
@@ -92,6 +112,11 @@ class Driver:
         self.timer = rospy.Timer(rospy.Duration(0.1), self.sendCommandCallback)
 
         self.goal_subscriber = rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goalReceivedCallback)
+        
+        self.scan_subscriber = rospy.Subscriber('/' + self.name + '/scan', LaserScan, self.scanReceivedCallBack)
+        self.center_dist=4
+        self.left_dist=4
+        self.right_dist=4
 
     def convert_to_json(self, filename):
         with open(filename) as f_in:
@@ -115,97 +140,6 @@ class Driver:
             rospy.logerr('Could not transform goal from ' + msg.header.frame_id + ' to ' + target_frame + '. Will ignore this goal.')
 
 
-    def frontCameraReceivedCallback(self, msg):
-        try:
-            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-        except CvBridgeError as e:
-            print(e)
-            return
-
-        width = cv_image.shape[1]
-
-        self.ally_front_left = False
-        self.ally_front_right = False
-        self.hunter_front_left = False
-        self.hunter_front_right = False
-        self.prey_front_left = False
-        self.prey_front_right = False
-   
-        ally_mins = np.array([self.ally_limits['limits']['b']['min'], self.ally_limits['limits']['g']['min'], self.ally_limits['limits']['r']['min']])
-        ally_maxs = np.array([self.ally_limits['limits']['b']['max'], self.ally_limits['limits']['g']['max'], self.ally_limits['limits']['r']['max']])
-        hunter_mins = np.array([self.hunter_limits['limits']['b']['min'], self.hunter_limits['limits']['g']['min'], self.hunter_limits['limits']['r']['min']])
-        hunter_maxs = np.array([self.hunter_limits['limits']['b']['max'], self.hunter_limits['limits']['g']['max'], self.hunter_limits['limits']['r']['max']])
-        prey_mins = np.array([self.prey_limits['limits']['b']['min'], self.prey_limits['limits']['g']['min'], self.prey_limits['limits']['r']['min']])
-        prey_maxs = np.array([self.prey_limits['limits']['b']['max'], self.prey_limits['limits']['g']['max'], self.prey_limits['limits']['r']['max']])
-
-        ally_mask = cv2.inRange(cv_image, ally_mins, ally_maxs)
-        hunter_mask = cv2.inRange(cv_image, hunter_mins, hunter_maxs)
-        prey_mask = cv2.inRange(cv_image, prey_mins, prey_maxs)
-
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(10,10))
-
-        ally_mask = cv2.morphologyEx(ally_mask,cv2.MORPH_CLOSE,kernel)
-        hunter_mask = cv2.morphologyEx(hunter_mask,cv2.MORPH_CLOSE,kernel)
-        prey_mask = cv2.morphologyEx(prey_mask,cv2.MORPH_CLOSE,kernel)
-
-        output = cv2.connectedComponentsWithStats(ally_mask, 8, cv2.CV_32S)
-        (numLabels, labels, stats, centroids) = output
-
-        for i in range(1, numLabels):
-            area = stats[i, cv2.CC_STAT_AREA]
-            (cX, cY) = centroids[i]
-            cX, cY = int(cX), int(cY)
-            if area > 700:
-                if cX > (width//2):
-                    self.ally_front_right = True
-                else:
-                    self.ally_front_left = True
-                # draw cross on centroid
-                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
-
-        output = cv2.connectedComponentsWithStats(hunter_mask, 8, cv2.CV_32S)
-        (numLabels, labels, stats, centroids) = output
-
-        for i in range(1, numLabels):
-            area = stats[i, cv2.CC_STAT_AREA]
-            (cX, cY) = centroids[i]
-            cX, cY = int(cX), int(cY)
-            if area > 700:
-                if cX > (width//2):
-                    self.hunter_front_right = True
-                    #print('hunter front right')
-                else:
-                    self.hunter_front_left = True
-                    #print('hunter front left')
-                # draw cross on centroid
-                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
-
-        output = cv2.connectedComponentsWithStats(prey_mask, 8, cv2.CV_32S)
-        (numLabels, labels, stats, centroids) = output
-
-        for i in range(1, numLabels):
-            area = stats[i, cv2.CC_STAT_AREA]
-            (cX, cY) = centroids[i]
-            cX, cY = int(cX), int(cY)
-            if area > 700:
-                if cX > (width//2):
-                    self.prey_front_right = True
-                    #print('prey front right')
-                else:
-                    self.prey_front_left = True
-                    #print('prey front left')
-                # draw cross on centroid
-                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
-
-        cv2.imshow('Front Camera', cv_image)
-        cv2.imshow('Front Camera Ally Detector', ally_mask)
-        cv2.imshow('Front Camera Hunter Detector', hunter_mask)
-        cv2.imshow('Front Camera Prey Detector', prey_mask)
-        #cv2.imwrite('test_multiple.jpeg',cv_image)
-
-        
-        cv2.waitKey(3)
-
     def backCameraReceivedCallback(self, msg):
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
@@ -213,7 +147,33 @@ class Driver:
             print(e)
             return
 
-        width = cv_image.shape[1]
+        self.back_camera_image = cv_image.copy()
+    
+    def frontCameraReceivedCallback(self, msg):
+        try:
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        except CvBridgeError as e:
+            print(e)
+            return
+
+        self.front_camera_image = cv_image.copy()
+        
+    def timerCallback(self, event):
+        
+        if self.front_camera_image is None or self.back_camera_image is None:
+            return
+
+        cv_image_front = self.front_camera_image
+        cv_image_back = self.back_camera_image
+
+        width = cv_image_front.shape[1]
+
+        self.ally_front_left = False
+        self.ally_front_right = False
+        self.hunter_front_left = False
+        self.hunter_front_right = False
+        self.prey_front_left = False
+        self.prey_front_right = False
 
         self.ally_back_left = False
         self.ally_back_right = False
@@ -229,39 +189,101 @@ class Driver:
         prey_mins = np.array([self.prey_limits['limits']['b']['min'], self.prey_limits['limits']['g']['min'], self.prey_limits['limits']['r']['min']])
         prey_maxs = np.array([self.prey_limits['limits']['b']['max'], self.prey_limits['limits']['g']['max'], self.prey_limits['limits']['r']['max']])
 
-        ally_mask = cv2.inRange(cv_image, ally_mins, ally_maxs)
-        hunter_mask = cv2.inRange(cv_image, hunter_mins, hunter_maxs)
-        prey_mask = cv2.inRange(cv_image, prey_mins, prey_maxs)
+        #\----FRONT CAMERA----/
+        ally_mask_front = cv2.inRange(cv_image_front, ally_mins, ally_maxs)
+        hunter_mask_front = cv2.inRange(cv_image_front, hunter_mins, hunter_maxs)
+        prey_mask_front = cv2.inRange(cv_image_front, prey_mins, prey_maxs)
 
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(10,10))
 
-        ally_mask = cv2.morphologyEx(ally_mask,cv2.MORPH_CLOSE,kernel)
-        hunter_mask = cv2.morphologyEx(hunter_mask,cv2.MORPH_CLOSE,kernel)
-        prey_mask = cv2.morphologyEx(prey_mask,cv2.MORPH_CLOSE,kernel)
+        ally_mask_front = cv2.morphologyEx(ally_mask_front,cv2.MORPH_CLOSE,kernel)
+        hunter_mask_front = cv2.morphologyEx(hunter_mask_front,cv2.MORPH_CLOSE,kernel)
+        prey_mask_front = cv2.morphologyEx(prey_mask_front,cv2.MORPH_CLOSE,kernel)
 
-        output = cv2.connectedComponentsWithStats(ally_mask, 8, cv2.CV_32S)
+        output = cv2.connectedComponentsWithStats(ally_mask_front, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
 
         for i in range(1, numLabels):
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 700:
+            if area > 500:
+                if cX > (width//2):
+                    self.ally_front_right = True
+                else:
+                    self.ally_front_left = True
+                # draw cross on centroid
+                cv2.putText(cv_image_front, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
+
+        output = cv2.connectedComponentsWithStats(hunter_mask_front, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 500:
+                if cX > (width//2):
+                    self.hunter_front_right = True
+                    #print('hunter front right')
+                else:
+                    self.hunter_front_left = True
+                    #print('hunter front left')
+                # draw cross on centroid
+                cv2.putText(cv_image_front, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
+
+        output = cv2.connectedComponentsWithStats(prey_mask_front, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 500:
+                if cX > (width//2):
+                    self.prey_front_right = True
+                    #print('prey front right')
+                else:
+                    self.prey_front_left = True
+                    #print('prey front left')
+                # draw cross on centroid
+                cv2.putText(cv_image_front, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+
+
+        #\----BACK CAMERA----/
+        ally_mask_back = cv2.inRange(cv_image_back, ally_mins, ally_maxs)
+        hunter_mask_back = cv2.inRange(cv_image_back, hunter_mins, hunter_maxs)
+        prey_mask_back = cv2.inRange(cv_image_back, prey_mins, prey_maxs)
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(10,10))
+
+        ally_mask_back = cv2.morphologyEx(ally_mask_back,cv2.MORPH_CLOSE,kernel)
+        hunter_mask_back = cv2.morphologyEx(hunter_mask_back,cv2.MORPH_CLOSE,kernel)
+        prey_mask_back = cv2.morphologyEx(prey_mask_back,cv2.MORPH_CLOSE,kernel)
+
+        output = cv2.connectedComponentsWithStats(ally_mask_back, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 500:
                 if cX > (width//2):
                     self.ally_back_right = True
                 else:
                     self.ally_back_left = True
                 # draw cross on centroid
-                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(cv_image_back, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
 
-        output = cv2.connectedComponentsWithStats(hunter_mask, 8, cv2.CV_32S)
+        output = cv2.connectedComponentsWithStats(hunter_mask_back, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
 
         for i in range(1, numLabels):
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 700:
+            if area > 500:
                 if cX > (width//2):
                     self.hunter_back_right = True
                     #print('hunter front right')
@@ -269,16 +291,16 @@ class Driver:
                     self.hunter_back_left = True
                     #print('hunter front left')
                 # draw cross on centroid
-                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(cv_image_back, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
 
-        output = cv2.connectedComponentsWithStats(prey_mask, 8, cv2.CV_32S)
+        output = cv2.connectedComponentsWithStats(prey_mask_back, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
 
         for i in range(1, numLabels):
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 700:
+            if area > 500:
                 if cX > (width//2):
                     self.prey_back_right = True
                     #print('prey front right')
@@ -286,15 +308,86 @@ class Driver:
                     self.prey_back_left = True
                     #print('prey front left')
                 # draw cross on centroid
-                cv2.putText(cv_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(cv_image_back, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+        
+        cv2.imshow('Front Camera', cv_image_front)
+        cv2.imshow('Front Camera Ally Detector', ally_mask_front)
+        cv2.imshow('Front Camera Hunter Detector', hunter_mask_front)
+        cv2.imshow('Front Camera Prey Detector', prey_mask_front)
+        #cv2.imwrite('test_multiple.jpeg',cv_image)
 
-        cv2.imshow('Back Camera', cv_image)
-        cv2.imshow('Back Camera Ally Detector', ally_mask)
-        cv2.imshow('Back Camera Hunter Detector', hunter_mask)
-        cv2.imshow('Back Camera Prey Detector', prey_mask)
+        cv2.imshow('Back Camera', cv_image_back)
+        cv2.imshow('Back Camera Ally Detector', ally_mask_back)
+        cv2.imshow('Back Camera Hunter Detector', hunter_mask_back)
+        cv2.imshow('Back Camera Prey Detector', prey_mask_back)
 
         cv2.waitKey(3)
+    
+    def makeSimpleProfile(self, output, input, slop):
+        if input > output:
+            output = min( input, output + slop )
+        elif input < output:
+            output = max( input, output - slop )
+        else:
+            output = input
+
+        return output
+    
+    def scanReceivedCallBack(self, scan):
+        # convert from polar coordinates to cartesian and fill the point cloud
+        points = []
+        z = 0
+        for idx, r in enumerate(scan.ranges):
+            if r >= scan.range_min and r <= scan.range_max:
+                theta = scan.angle_min + scan.angle_increment * idx
+                x = r * math.cos(theta)
+                y = r * math.sin(theta)
+                points.append([x, y, z, theta])
         
+        points = np.array(points)
+        
+        clustering = DBSCAN(eps=0.5, min_samples=1).fit(points[:3,:])
+        
+        robot_labels = []
+        for label in set(clustering.labels_):
+            if 2<= len([l for l in clustering.labels_ if l==label]) <=20:
+                robot_labels.append(label)
+        
+        self.hunters = [] # coordinates of hunters
+        self.preys = [] # coordinates of preys
+        self.allies = [] # coordinates of allies
+        for rl in robot_labels:
+            robot_points = [points[i,:] for i in range(len(clustering.labels_)) if clustering.labels_[i]==rl]
+            x = sum([p[0] for p in robot_points])/len(robot_points)
+            y = sum([p[1] for p in robot_points])/len(robot_points)
+            z = sum([p[2] for p in robot_points])/len(robot_points)
+            theta = sum([p[3] for p in robot_points])/len(robot_points)
+            
+            if (0<=theta<=math.pi/2 and self.hunter_front_left) or (math.pi/2<=theta<=math.pi and self.hunter_back_left) or (math.pi<=theta<=3/2*math.pi and self.hunter_back_right) or (3/2*math.pi<=theta<=2*math.pi and self.hunter_front_right):
+                self.hunters.append([x,y,z,theta])
+            
+            if (0<=theta<=math.pi/2 and self.prey_front_left) or (math.pi/2<=theta<=math.pi and self.prey_back_left) or (math.pi<=theta<=3/2*math.pi and self.prey_back_right) or (3/2*math.pi<=theta<=2*math.pi and self.prey_front_right):
+                self.preys.append([x,y,z,theta])
+                
+            if (0<=theta<=math.pi/2 and self.ally_front_left) or (math.pi/2<=theta<=math.pi and self.ally_back_left) or (math.pi<=theta<=3/2*math.pi and self.ally_back_right) or (3/2*math.pi<=theta<=2*math.pi and self.ally_front_right):
+                self.allies.append([x,y,z,theta])
+
+        self.center_dist=scan.range_max
+        for r in scan.ranges[0:int(math.pi/24/scan.angle_increment)]+scan.ranges[int(47*math.pi/24/scan.angle_increment):]:
+            if r >= scan.range_min and r <= scan.range_max and r < self.center_dist:
+                self.center_dist = r
+        
+        self.right_dist=scan.range_max
+        for r in scan.ranges[int(1.5*math.pi/scan.angle_increment):int(11*math.pi/6/scan.angle_increment)]:
+            if r >= scan.range_min and r <= scan.range_max and r < self.right_dist:
+                self.right_dist = r
+        
+        self.left_dist=scan.range_max
+        for r in scan.ranges[int(math.pi/6/scan.angle_increment):int(0.5*math.pi/scan.angle_increment)]:
+            if r >= scan.range_min and r <= scan.range_max and r < self.left_dist:
+                self.left_dist = r
+        
+    """   
     def driveStraight(self, minumum_speed=0.1, maximum_speed=1.5):
         goal_copy = copy.deepcopy(self.goal)  # make sure we don't change the stamp field of the goal
         goal_copy.header.stamp = rospy.Time.now()
@@ -305,7 +398,7 @@ class Driver:
 
         print('Transforming pose')
         goal_in_base_link = self.tf_buffer.transform(goal_copy, self.name + '/base_footprint', rospy.Duration(1))
-        print('Pose trasnformed')
+        print('Pose transformed')
 
         x = goal_in_base_link.pose.position.x
         y = goal_in_base_link.pose.position.y
@@ -315,10 +408,13 @@ class Driver:
         distance_to_goal = math.sqrt(x**2 + y**2)
         self.speed = max(minumum_speed, 0.5 * distance_to_goal)   # limit minimum speed
         self.speed = min(maximum_speed, self.speed)   # limit maximum speed
+    """ 
 
+    # timer triggered callback to decide actions to take
     def sendCommandCallback(self, event):
         #print('Sending twist command')
 
+        """
         if not self.goal_active:  # no goal, no movement
             self.angle = 0
             self.speed = 0
@@ -329,6 +425,37 @@ class Driver:
         twist.linear.x = self.speed
         twist.angular.z = self.angle
         self.publisher_command.publish(twist)
+        """
+        
+        #print("allies: ", self.allies)
+        #print("hunters: ", self.hunters)
+        #print("preys: ", self.preys)
+        
+        if self.state == "wandering":
+            if self.center_dist>2.5 and self.left_dist>0.3 and self.right_dist>0.3:
+                self.target_angular_vel = 0
+                
+                self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.7, (LIN_VEL_STEP_SIZE/2.0))
+                self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, 0, (ANG_VEL_STEP_SIZE/2.0))
+
+            else:
+                self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.2, (LIN_VEL_STEP_SIZE/2.0))
+                
+                if self.left_dist<2 or self.right_dist<2:
+                    if self.left_dist>self.right_dist:
+                        self.target_angular_vel=0.5
+                    else:
+                        self.target_angular_vel=-0.5
+                
+                elif not self.target_angular_vel:
+                    self.target_angular_vel = 0.5 if random.random()>0.5 else -0.5
+                    
+                self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+
+            twist = Twist()
+            twist.linear.x = self.control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
+            twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = self.control_angular_vel
+            self.publisher_command.publish(twist)
 
 
 def main():
@@ -341,17 +468,6 @@ def main():
 
     driver = Driver()
     rospy.spin()
-
-    # ---------------------------------------------------
-    # Execution
-    # ---------------------------------------------------
-    # while not rospy.is_shutdown():
-    #
-    #     # create a dog message to sent
-
-    # ---------------------------------------------------
-    # Termination
-    # ---------------------------------------------------
 
 
 if __name__ == '__main__':
