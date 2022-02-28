@@ -13,7 +13,7 @@ turtlebot3_model = rospy.get_param("model", "burger")
 
 
 
-pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+pub = rospy.Publisher('/p_mcarvalho/cmd_vel', Twist, queue_size=1)
 
 BURGER_MAX_LIN_VEL = 0.22
 BURGER_MAX_ANG_VEL = 2.84
@@ -50,6 +50,7 @@ class Teleop_Server:
 
     def callbackTeleopReceived(self, msg):
         self.teleop_twist = msg
+        pub.publish(msg)
         rospy.loginfo(msg)
 
 
@@ -137,7 +138,7 @@ def main():
     rospy.init_node('teleop_processing_node', anonymous=False)
 
     rospy.Subscriber('/teleop_vel', Twist, callback=teleop_server.callbackTeleopReceived)
-    rospy.Subscriber('/scan', LaserScan, callback=teleop_server.callbackMessageReceived)
+    #rospy.Subscriber('/scan', LaserScan, callback=teleop_server.callbackMessageReceived)
 
     # spin() simply keeps python from exiting until this node is stopped
     rospy.spin()
