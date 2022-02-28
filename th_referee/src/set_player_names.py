@@ -16,6 +16,7 @@ from gazebo_msgs.msg import ModelState, ModelStates, ContactsState
 # ------------------------
 #   DATA STRUCTURES
 # ------------------------
+
 from gazebo_msgs.srv import SetModelState
 
 
