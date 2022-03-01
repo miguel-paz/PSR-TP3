@@ -159,6 +159,7 @@ class Driver:
         self.front_camera_image = cv_image.copy()
         
     def timerCallback(self, event):
+        #cv2.imwrite('test_multiple.jpeg', self.front_camera_image)
         
         if self.front_camera_image is None or self.back_camera_image is None:
             return
@@ -207,7 +208,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 300:
+            if area > 400:
                 if cX > (width//2):
                     self.ally_front_right = True
                 else:
@@ -222,7 +223,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 300:
+            if area > 400:
                 if cX > (width//2):
                     self.hunter_front_right = True
                     #print('hunter front right')
@@ -239,7 +240,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 300:
+            if area > 400:
                 if cX > (width//2):
                     self.prey_front_right = True
                     #print('prey front right')
@@ -268,7 +269,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 300:
+            if area > 400:
                 if cX > (width//2):
                     self.ally_back_right = True
                 else:
@@ -283,7 +284,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 300:
+            if area > 400:
                 if cX > (width//2):
                     self.hunter_back_right = True
                     #print('hunter front right')
@@ -300,7 +301,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 300:
+            if area > 400:
                 if cX > (width//2):
                     self.prey_back_right = True
                     #print('prey front right')
@@ -314,7 +315,7 @@ class Driver:
         cv2.imshow('Front Camera Ally Detector', ally_mask_front)
         cv2.imshow('Front Camera Hunter Detector', hunter_mask_front)
         cv2.imshow('Front Camera Prey Detector', prey_mask_front)
-        #cv2.imwrite('test_multiple.jpeg',cv_image)
+        
 
         #cv2.imshow('Back Camera', cv_image_back)
         #cv2.imshow('Back Camera Ally Detector', ally_mask_back)
