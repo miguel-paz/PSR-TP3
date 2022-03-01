@@ -207,7 +207,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 500:
+            if area > 300:
                 if cX > (width//2):
                     self.ally_front_right = True
                 else:
@@ -222,7 +222,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 500:
+            if area > 300:
                 if cX > (width//2):
                     self.hunter_front_right = True
                     #print('hunter front right')
@@ -239,7 +239,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 500:
+            if area > 300:
                 if cX > (width//2):
                     self.prey_front_right = True
                     #print('prey front right')
@@ -268,7 +268,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 500:
+            if area > 300:
                 if cX > (width//2):
                     self.ally_back_right = True
                 else:
@@ -283,7 +283,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 500:
+            if area > 300:
                 if cX > (width//2):
                     self.hunter_back_right = True
                     #print('hunter front right')
@@ -300,7 +300,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 500:
+            if area > 300:
                 if cX > (width//2):
                     self.prey_back_right = True
                     #print('prey front right')
@@ -316,10 +316,10 @@ class Driver:
         cv2.imshow('Front Camera Prey Detector', prey_mask_front)
         #cv2.imwrite('test_multiple.jpeg',cv_image)
 
-        cv2.imshow('Back Camera', cv_image_back)
-        cv2.imshow('Back Camera Ally Detector', ally_mask_back)
-        cv2.imshow('Back Camera Hunter Detector', hunter_mask_back)
-        cv2.imshow('Back Camera Prey Detector', prey_mask_back)
+        #cv2.imshow('Back Camera', cv_image_back)
+        #cv2.imshow('Back Camera Ally Detector', ally_mask_back)
+        #cv2.imshow('Back Camera Hunter Detector', hunter_mask_back)
+        #cv2.imshow('Back Camera Prey Detector', prey_mask_back)
 
         cv2.waitKey(3)
     
@@ -430,32 +430,38 @@ class Driver:
         #print("allies: ", self.allies)
         #print("hunters: ", self.hunters)
         #print("preys: ", self.preys)
+        if len(self.hunters)>0:
+            self.state = "fleeing"
+        elif len(self.preys)>0:
+            self.state = "hunting"
+        else:
+            self.state = "wandering"
         
-        if self.state == "wandering":
-            if self.center_dist>2.5 and self.left_dist>0.3 and self.right_dist>0.3:
-                self.target_angular_vel = 0
-                
-                self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.7, (LIN_VEL_STEP_SIZE/2.0))
-                self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, 0, (ANG_VEL_STEP_SIZE/2.0))
+        #if self.state == "wandering":
+        if self.center_dist>2.5 and self.left_dist>0.3 and self.right_dist>0.3:
+            self.target_angular_vel = 0
+            
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.7, (LIN_VEL_STEP_SIZE/2.0))
+            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, 0, (ANG_VEL_STEP_SIZE/2.0))
 
-            else:
-                self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.2, (LIN_VEL_STEP_SIZE/2.0))
+        else:
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.2, (LIN_VEL_STEP_SIZE/2.0))
+            
+            if self.left_dist<2 or self.right_dist<2:
+                if self.left_dist>self.right_dist:
+                    self.target_angular_vel=0.5
+                else:
+                    self.target_angular_vel=-0.5
+            
+            elif not self.target_angular_vel:
+                self.target_angular_vel = 0.5 if random.random()>0.5 else -0.5
                 
-                if self.left_dist<2 or self.right_dist<2:
-                    if self.left_dist>self.right_dist:
-                        self.target_angular_vel=0.5
-                    else:
-                        self.target_angular_vel=-0.5
-                
-                elif not self.target_angular_vel:
-                    self.target_angular_vel = 0.5 if random.random()>0.5 else -0.5
-                    
-                self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
 
-            twist = Twist()
-            twist.linear.x = self.control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
-            twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = self.control_angular_vel
-            self.publisher_command.publish(twist)
+        twist = Twist()
+        twist.linear.x = self.control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
+        twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = self.control_angular_vel
+        self.publisher_command.publish(twist)
 
 
 def main():
