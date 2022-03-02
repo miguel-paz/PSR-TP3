@@ -13,6 +13,7 @@ from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist, PoseStamped
 from sensor_msgs.msg import LaserScan
 import tf2_geometry_msgs  # **Do not use geometry_msgs. Use this instead for PoseStamped
+from datetime import datetime
 
 from sklearn.cluster import DBSCAN
 import numpy as np
@@ -28,7 +29,7 @@ class Driver:
     def __init__(self):
 
         folder = os.getcwd() + '/p_mcarvalho_player/src/'
-
+        self.teleop_timestamp = None
         self.name = rospy.get_name()
         self.name = self.name.strip('/') # remove initial /
         color = self.name.split('_', 1)[0]
@@ -103,7 +104,7 @@ class Driver:
         self.target_angular_vel = 0.0
         self.control_linear_vel = 0.0
         self.control_angular_vel = 0.0
-
+        print(self.name)
         self.publisher_command = rospy.Publisher('/' + self.name + '/cmd_vel', Twist, queue_size=1)
 
         self.tf_buffer = tf2_ros.Buffer()
@@ -114,6 +115,8 @@ class Driver:
         self.goal_subscriber = rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goalReceivedCallback)
         
         self.scan_subscriber = rospy.Subscriber('/' + self.name + '/scan', LaserScan, self.scanReceivedCallBack)
+        self.teleop_subscriber = rospy.Subscriber('/' + self.name + '/teleop_vel', Twist, self.teleopReceivedCallBack)
+
         self.center_dist=4
         self.left_dist=4
         self.right_dist=4
@@ -140,6 +143,15 @@ class Driver:
             rospy.logerr('Could not transform goal from ' + msg.header.frame_id + ' to ' + target_frame + '. Will ignore this goal.')
 
 
+    def teleopReceivedCallBack(self, msg):
+        self.teleop_timestamp = datetime.timestamp(datetime.now())
+        print(msg)
+        if msg.linear.x != 0 or msg.angular.z != 0:
+            self.state = "teleop"
+            self.publisher_command.publish(msg)
+        else:
+            self.state = "wandering"
+
     def backCameraReceivedCallback(self, msg):
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
@@ -159,8 +171,7 @@ class Driver:
         self.front_camera_image = cv_image.copy()
         
     def timerCallback(self, event):
-        #cv2.imwrite('test_multiple.jpeg', self.front_camera_image)
-        
+    
         if self.front_camera_image is None or self.back_camera_image is None:
             return
 
@@ -208,7 +219,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 400:
+            if area > 300:
                 if cX > (width//2):
                     self.ally_front_right = True
                 else:
@@ -223,7 +234,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 400:
+            if area > 300:
                 if cX > (width//2):
                     self.hunter_front_right = True
                     #print('hunter front right')
@@ -240,7 +251,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 400:
+            if area > 300:
                 if cX > (width//2):
                     self.prey_front_right = True
                     #print('prey front right')
@@ -269,7 +280,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 400:
+            if area > 300:
                 if cX > (width//2):
                     self.ally_back_right = True
                 else:
@@ -284,7 +295,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 400:
+            if area > 300:
                 if cX > (width//2):
                     self.hunter_back_right = True
                     #print('hunter front right')
@@ -301,7 +312,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 400:
+            if area > 300:
                 if cX > (width//2):
                     self.prey_back_right = True
                     #print('prey front right')
@@ -311,11 +322,11 @@ class Driver:
                 # draw cross on centroid
                 cv2.putText(cv_image_back, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
         
-        cv2.imshow('Front Camera', cv_image_front)
-        cv2.imshow('Front Camera Ally Detector', ally_mask_front)
-        cv2.imshow('Front Camera Hunter Detector', hunter_mask_front)
-        cv2.imshow('Front Camera Prey Detector', prey_mask_front)
-        
+        # cv2.imshow('Front Camera', cv_image_front)
+        # cv2.imshow('Front Camera Ally Detector', ally_mask_front)
+        # cv2.imshow('Front Camera Hunter Detector', hunter_mask_front)
+        # cv2.imshow('Front Camera Prey Detector', prey_mask_front)
+        #cv2.imwrite('test_multiple.jpeg',cv_image)
 
         #cv2.imshow('Back Camera', cv_image_back)
         #cv2.imshow('Back Camera Ally Detector', ally_mask_back)
@@ -427,6 +438,17 @@ class Driver:
         twist.angular.z = self.angle
         self.publisher_command.publish(twist)
         """
+        if self.teleop_timestamp:
+            timediff = datetime.timestamp(datetime.now()) - self.teleop_timestamp
+            print(timediff.total_seconds())
+            if timediff.total_seconds() > 1:
+                self.state = "wandering"
+                print("entrou???") 
+
+
+        print(self.state)
+        if self.state == "teleop":
+            return
         
         #print("allies: ", self.allies)
         #print("hunters: ", self.hunters)
@@ -438,26 +460,38 @@ class Driver:
         else:
             self.state = "wandering"
         
-        #if self.state == "wandering":
-        if self.center_dist>2.5 and self.left_dist>0.3 and self.right_dist>0.3:
-            self.target_angular_vel = 0
-            
-            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.7, (LIN_VEL_STEP_SIZE/2.0))
-            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, 0, (ANG_VEL_STEP_SIZE/2.0))
 
-        else:
-            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.2, (LIN_VEL_STEP_SIZE/2.0))
-            
-            if self.left_dist<2 or self.right_dist<2:
-                if self.left_dist>self.right_dist:
-                    self.target_angular_vel=0.5
-                else:
-                    self.target_angular_vel=-0.5
-            
-            elif not self.target_angular_vel:
-                self.target_angular_vel = 0.5 if random.random()>0.5 else -0.5
+        if self.state == "wandering":
+            print("wandering")
+            if self.center_dist>2.5 and self.left_dist>0.3 and self.right_dist>0.3:
+                self.target_angular_vel = 0
                 
-            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+                self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.7, (LIN_VEL_STEP_SIZE/2.0))
+                self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, 0, (ANG_VEL_STEP_SIZE/2.0))
+
+            else:
+                self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.2, (LIN_VEL_STEP_SIZE/2.0))
+                
+                if self.left_dist<2 or self.right_dist<2:
+                    if self.left_dist>self.right_dist:
+                        self.target_angular_vel=0.5
+                    else:
+                        self.target_angular_vel=-0.5
+                
+                elif not self.target_angular_vel:
+                    self.target_angular_vel = 0.5 if random.random()>0.5 else -0.5
+                    
+                self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+        if self.state == "fleeing":
+            self.control_linear_vel -= 0.1
+            print("fleeing")
+            for h in self.hunters:
+                print(h)
+                # if h[3]>1:
+                #     print(h[3])
+                #     self.control_angular_vel = math.pi/2
+                # else:
+                self.control_angular_vel = 0
 
         twist = Twist()
         twist.linear.x = self.control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
@@ -465,12 +499,14 @@ class Driver:
         self.publisher_command.publish(twist)
 
 
+
+
+
 def main():
     # ---------------------------------------------------
     # INITIALIZATION
     # ---------------------------------------------------
     default_node_name = 'p_mcarvalho_driver'
-
     rospy.init_node(default_node_name, anonymous=False)
 
     driver = Driver()
