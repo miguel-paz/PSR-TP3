@@ -63,7 +63,7 @@
         </include>
     </group>
 
-    <!--Visualização dos nomes dos robôs -->
+    <!--Visualização do nome do robô -->
     <node name="set_player_names" pkg="th_referee" type="set_player_names.py" output="screen"/>
 
 </launch>
