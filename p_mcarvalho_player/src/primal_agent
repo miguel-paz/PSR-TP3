@@ -152,12 +152,8 @@ class Driver:
 
     def teleopReceivedCallBack(self, msg):
         self.teleop_timestamp = datetime.timestamp(datetime.now())
-        print(msg)
-        if msg.linear.x != 0 or msg.angular.z != 0:
-            self.state = "teleop"
-            self.publisher_command.publish(msg)
-        else:
-            self.state = "wandering"
+        self.state = "teleop"
+        self.publisher_command.publish(msg)
 
     def backCameraReceivedCallback(self, msg):
         try:
@@ -415,10 +411,9 @@ class Driver:
         """
         if self.teleop_timestamp:
             timediff = datetime.timestamp(datetime.now()) - self.teleop_timestamp
-            print(timediff.total_seconds())
-            if timediff.total_seconds() > 1:
+            print(timediff)
+            if timediff > 1:
                 self.state = "wandering"
-                print("entrou???") 
 
 
         print(self.state)
