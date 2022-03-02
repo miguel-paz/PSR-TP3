@@ -3,7 +3,6 @@ import copy
 import math
 import random
 import cv2
-import numpy as np
 import json
 import os
 from cv_bridge import CvBridge
@@ -13,6 +12,9 @@ from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist, PoseStamped
 from sensor_msgs.msg import LaserScan
 import tf2_geometry_msgs  # **Do not use geometry_msgs. Use this instead for PoseStamped
+from datetime import datetime
+import numpy as np
+import subprocess
 
 MAX_LIN_VEL = 2.22
 MAX_ANG_VEL = 2.84
@@ -20,12 +22,27 @@ MAX_ANG_VEL = 2.84
 LIN_VEL_STEP_SIZE = 0.05
 ANG_VEL_STEP_SIZE = 0.2
 
+def bash(player, state, blocking=True, verbose=False):
+
+    cmd = "gz marker -m 'action: ADD_MODIFY, type: TEXT, id: " + \
+          ", scale: {x:0.3, y:0.3, z:0.3}, text: \"" + player + "|" + state + "\", parent: \"" + player + \
+          "::base_footprint\", pose: {position: {x:0, y:0, z:0.5}, orientation: {x:0, y:0, z:0, w:1}}'"
+
+    if verbose:
+        print("Executing command: " + cmd)
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if blocking:
+        for line in p.stdout.readlines():
+            print(line)
+            p.wait()
+
+
 class Driver:
 
     def __init__(self):
 
         folder = os.getcwd() + '/p_mcarvalho_player/src/'
-
+        self.teleop_timestamp = None
         self.name = rospy.get_name()
         self.name = self.name.strip('/') # remove initial /
         color = self.name.split('_', 1)[0]
@@ -88,6 +105,8 @@ class Driver:
         
         self.state = 'wandering'
 
+        bash(self.name, self.state, verbose=True)
+
         self.goal = PoseStamped()
 
         self.angle = 0
@@ -97,7 +116,7 @@ class Driver:
         self.target_angular_vel = 0.0
         self.control_linear_vel = 0.0
         self.control_angular_vel = 0.0
-
+        print(self.name)
         self.publisher_command = rospy.Publisher('/' + self.name + '/cmd_vel', Twist, queue_size=1)
 
         self.tf_buffer = tf2_ros.Buffer()
@@ -108,12 +127,19 @@ class Driver:
         self.goal_subscriber = rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goalReceivedCallback)
         
         self.scan_subscriber = rospy.Subscriber('/' + self.name + '/scan', LaserScan, self.scanReceivedCallBack)
+        self.teleop_subscriber = rospy.Subscriber('/' + self.name + '/teleop_vel', Twist, self.teleopReceivedCallBack)
+
         self.scan_range_max = 4
         self.points = []
 
     def convert_to_json(self, filename):
         with open(filename) as f_in:
             return json.load(f_in)
+
+    def teleopReceivedCallBack(self, msg):
+        self.teleop_timestamp = datetime.timestamp(datetime.now())
+        self.state = "teleop"
+        self.publisher_command.publish(msg)
 
     ## CODE ABOUT CAMERAS ##
     def backCameraReceivedCallback(self, msg):
@@ -184,7 +210,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 400:
+            if area > 300:
                 if cX > (width//2):
                     self.ally_front_right = True
                 else:
@@ -199,7 +225,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 400:
+            if area > 300:
                 if cX > (width//2):
                     self.hunter_front_right = True
                     #print('hunter front right')
@@ -216,7 +242,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 400:
+            if area > 300:
                 if cX > (width//2):
                     self.prey_front_right = True
                     #print('prey front right')
@@ -245,7 +271,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 400:
+            if area > 300:
                 if cX > (width//2):
                     self.ally_back_right = True
                 else:
@@ -260,7 +286,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 400:
+            if area > 300:
                 if cX > (width//2):
                     self.hunter_back_right = True
                     #print('hunter front right')
@@ -277,7 +303,7 @@ class Driver:
             area = stats[i, cv2.CC_STAT_AREA]
             (cX, cY) = centroids[i]
             cX, cY = int(cX), int(cY)
-            if area > 400:
+            if area > 300:
                 if cX > (width//2):
                     self.prey_back_right = True
                     #print('prey front right')
@@ -343,7 +369,10 @@ class Driver:
                 rospy.logerr('Could not transform goal from ' + msg.header.frame_id + ' to ' + target_frame + '. Will ignore this goal.')
     
     # timer triggered callback to decide actions to take
-    def drive(self): 
+    def drive(self):
+        if self.state == "teleop" and datetime.timestamp(datetime.now()) - self.teleop_timestamp<1:
+            return
+        
         if self.state != "goal":
             if len(self.hunters)>0:
                 self.state = "fleeing"
@@ -365,7 +394,6 @@ class Driver:
 
             else:
                 self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.2, (LIN_VEL_STEP_SIZE/2.0))
-                
                 if left_dist<2 or right_dist<2:
                     if left_dist>right_dist:
                         self.target_angular_vel=0.5
@@ -390,16 +418,18 @@ class Driver:
 
             x = goal_in_base_link.pose.position.x
             y = goal_in_base_link.pose.position.y
+            angle = math.atan2(y,x)
+            
+            center_dist = min(self.getMinimumDistance(0,math.pi/24), self.getMinimumDistance(47/24*math.pi,2*math.pi))
+            
+            if x**2 + y**2 < 1 or center_dist<1.5:
+                self.state = "wandering"
 
-            self.angle = math.atan2(y,x)
-
-            self.target_linear_vel = math.sqrt(x**2 + y**2)/2
-            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.2, (LIN_VEL_STEP_SIZE/2.0))
-            self.speed = max(0, 0.5 * distance_to_goal)   # limit minimum speed
-            self.speed = min(MAX_LIN_VEL, self.speed)   # limit maximum speed
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.7 if angle < math.pi/2 or angle > 3*math.pi/2 else 0, (LIN_VEL_STEP_SIZE/2.0))
+            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, angle if angle < math.pi else angle-math.pi*2, (ANG_VEL_STEP_SIZE/2.0))
             twist = Twist()
-            twist.linear.x = self.speed
-            twist.angular.z = self.angle
+            twist.linear.x = self.control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
+            twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = self.control_angular_vel
             self.publisher_command.publish(twist)
 
 
@@ -408,7 +438,6 @@ def main():
     # INITIALIZATION
     # ---------------------------------------------------
     default_node_name = 'p_mcarvalho_driver'
-
     rospy.init_node(default_node_name, anonymous=False)
 
     driver = Driver()

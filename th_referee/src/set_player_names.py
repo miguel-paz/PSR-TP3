@@ -3,16 +3,8 @@
 # ------------------------
 #   IMPORTS
 # ------------------------
-import math, random
 import subprocess
-from colorama import Fore, Back, Style
-from functools import partial
 import rospy
-import tf_conversions  # Because of transformations
-import tf2_ros
-import geometry_msgs.msg
-from gazebo_msgs.msg import ModelState, ModelStates, ContactsState
-
 # ------------------------
 #   DATA STRUCTURES
 # ------------------------
