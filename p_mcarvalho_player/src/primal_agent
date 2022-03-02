@@ -416,7 +416,6 @@ class Driver:
                 self.state = "wandering"
 
 
-        print(self.state)
         if self.state == "teleop":
             return
         
@@ -430,6 +429,7 @@ class Driver:
         else:
             self.state = "wandering"
         
+        print(self.state)
         if self.state == "wandering" or self.state == "fleeing" or self.state == "hunting":
             center_dist = min(self.getMinimumDistance(0,math.pi/24), self.getMinimumDistance(47/24*math.pi,2*math.pi))
             left_dist = self.getMinimumDistance(math.pi/6, math.pi/2)

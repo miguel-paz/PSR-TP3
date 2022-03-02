@@ -35,7 +35,7 @@ class Teleop_Server:
         self.control_linear_vel  = 0.0
         self.control_angular_vel = 0.0
         self.Turning = False
-        self.pub = rospy.Publisher('/red1/teleop_vel', Twist, queue_size=1)
+        self.pub = rospy.Publisher('teleop_vel', Twist, queue_size=1)
 
     def makeSimpleProfile(self, output, input, slop):
         if input > output:
