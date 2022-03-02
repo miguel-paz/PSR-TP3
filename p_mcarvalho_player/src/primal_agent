@@ -89,7 +89,6 @@ class Driver:
         self.state = 'wandering'
 
         self.goal = PoseStamped()
-        self.goal_active = False
 
         self.angle = 0
         self.speed = 0
@@ -115,18 +114,6 @@ class Driver:
     def convert_to_json(self, filename):
         with open(filename) as f_in:
             return json.load(f_in)
-
-    def goalReceivedCallback(self, msg):
-        # TODO verify is goal is on odom frame
-        print('Received new goal on frame id' + msg.header.frame_id)
-        target_frame = self.name + '/odom'
-        try:
-            self.goal = self.tf_buffer.transform(msg, target_frame, rospy.Duration(1))
-            self.goal_active = True
-            rospy.logwarn('Setting new goal')
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-            goal_active = False
-            rospy.logerr('Could not transform goal from ' + msg.header.frame_id + ' to ' + target_frame + '. Will ignore this goal.')
 
     ## CODE ABOUT CAMERAS ##
     def backCameraReceivedCallback(self, msg):
@@ -311,12 +298,11 @@ class Driver:
         #cv2.imshow('Back Camera Hunter Detector', hunter_mask_back)
         #cv2.imshow('Back Camera Prey Detector', prey_mask_back)
 
-        cv2.waitKey(3)
+        #cv2.waitKey(3)
     
     ## CODE ABOUT LIDAR ##
     def scanReceivedCallBack(self, scan): # intervals of 0.2s
         self.scan_range_max = scan.range_max
-        self.scan_angle_increment = scan.angle_increment
         
         self.points = []
         for idx, r in enumerate(scan.ranges):
@@ -333,7 +319,7 @@ class Driver:
                 
         return dist
     
-    ## CODE ABOUT DRIVING ##
+    ## CODE ABOUT DRIVING ##    
     def makeSimpleProfile(self, output, input, slop):
         if input > output:
             output = min( input, output + slop )
@@ -343,56 +329,28 @@ class Driver:
             output = input
 
         return output
-    
-    """   
-    def driveStraight(self, minumum_speed=0.1, maximum_speed=1.5):
-        goal_copy = copy.deepcopy(self.goal)  # make sure we don't change the stamp field of the goal
-        goal_copy.header.stamp = rospy.Time.now()
 
-        # goal_tf = tf2_geometry_msgs.PoseStamped()
-        # goal_tf.header.stamp = rospy.Time.now()
-        # goal_tf.header.frame_id = self.goal.header.frame_id
-
-        print('Transforming pose')
-        goal_in_base_link = self.tf_buffer.transform(goal_copy, self.name + '/base_footprint', rospy.Duration(1))
-        print('Pose transformed')
-
-        x = goal_in_base_link.pose.position.x
-        y = goal_in_base_link.pose.position.y
-
-        self.angle = math.atan2(y,x)
-
-        distance_to_goal = math.sqrt(x**2 + y**2)
-        self.speed = max(minumum_speed, 0.5 * distance_to_goal)   # limit minimum speed
-        self.speed = min(maximum_speed, self.speed)   # limit maximum speed
-    """ 
+    def goalReceivedCallback(self, msg):
+        # verify is goal is on odom frame
+        target_frame = self.name + '/odom'
+        if msg.header.frame_id.split("/")[0] == self.name:
+            try:
+                self.goal = self.tf_buffer.transform(msg, target_frame, rospy.Duration(1))
+                self.state = "goal"
+                rospy.logwarn('Setting new goal')
+            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                self.state = "wandering"
+                rospy.logerr('Could not transform goal from ' + msg.header.frame_id + ' to ' + target_frame + '. Will ignore this goal.')
     
     # timer triggered callback to decide actions to take
-    def drive(self):
-        #print('Sending twist command')
-
-        """
-        if not self.goal_active:  # no goal, no movement
-            self.angle = 0
-            self.speed = 0
-        else:
-            self.driveStraight()
-
-        twist = Twist()
-        twist.linear.x = self.speed
-        twist.angular.z = self.angle
-        self.publisher_command.publish(twist)
-        """
-        
-        #print("allies: ", self.allies)
-        #print("hunters: ", self.hunters)
-        #print("preys: ", self.preys)
-        if len(self.hunters)>0:
-            self.state = "fleeing"
-        elif len(self.preys)>0:
-            self.state = "hunting"
-        else:
-            self.state = "wandering"
+    def drive(self): 
+        if self.state != "goal":
+            if len(self.hunters)>0:
+                self.state = "fleeing"
+            elif len(self.preys)>0:
+                self.state = "hunting"
+            else:
+                self.state = "wandering"
         
         if self.state == "wandering" or self.state == "fleeing" or self.state == "hunting":
             center_dist = min(self.getMinimumDistance(0,math.pi/24), self.getMinimumDistance(47/24*math.pi,2*math.pi))
@@ -422,6 +380,26 @@ class Driver:
             twist = Twist()
             twist.linear.x = self.control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
             twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = self.control_angular_vel
+            self.publisher_command.publish(twist)
+        
+        elif self.state=="goal":
+            goal_copy = copy.deepcopy(self.goal)  # make sure we don't change the stamp field of the goal
+            goal_copy.header.stamp = rospy.Time.now()
+
+            goal_in_base_link = self.tf_buffer.transform(goal_copy, self.name + '/base_footprint', rospy.Duration(1))
+
+            x = goal_in_base_link.pose.position.x
+            y = goal_in_base_link.pose.position.y
+
+            self.angle = math.atan2(y,x)
+
+            self.target_linear_vel = math.sqrt(x**2 + y**2)/2
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.2, (LIN_VEL_STEP_SIZE/2.0))
+            self.speed = max(0, 0.5 * distance_to_goal)   # limit minimum speed
+            self.speed = min(MAX_LIN_VEL, self.speed)   # limit maximum speed
+            twist = Twist()
+            twist.linear.x = self.speed
+            twist.angular.z = self.angle
             self.publisher_command.publish(twist)
 
 
