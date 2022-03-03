@@ -17,6 +17,7 @@ import tf2_ros
 import geometry_msgs.msg
 from gazebo_msgs.msg import ModelState, ModelStates, ContactsState
 from prettytable import PrettyTable
+import readchar
 
 # ------------------------
 #   DATA STRUCTURES
@@ -46,8 +47,7 @@ class Referee:
         except rospy.ROSException:
             print("Could not get param name")
 
-        required_params = ['/killed_duration', '/game_duration', '/positive_score', '/negative_score', '/best_hunter_score',
-                           '/best_survivor_score', '/red_players', '/green_players', '/blue_players']
+        required_params = ['/killed_duration', '/game_duration', '/positive_score', '/negative_score', '/best_hunter_score', '/best_survivor_score', '/red_players', '/green_players', '/blue_players']
         print(existing_params)
         for required_param in required_params:
             if not required_param in existing_params:
@@ -111,6 +111,11 @@ class Referee:
             print(Style.BRIGHT + 'Game Over! Team ' + Fore.GREEN + 'Green' + Fore.RESET + ' wins!!!')
         elif self.final_score['blue'] > max(self.final_score['green'], self.final_score['red']):
             print(Style.BRIGHT + 'Game Over! Team ' + Fore.BLUE + 'Blue' + Fore.RESET + ' wins!!!')
+
+
+        print('Press any key to exit.')
+        readchar.readkey()
+
 
         rospy.signal_shutdown('Game finished')
 
