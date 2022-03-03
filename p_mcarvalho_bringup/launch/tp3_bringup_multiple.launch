@@ -33,6 +33,8 @@
             <arg name="y_pos" value="$(arg y_pos_1)"/>
             <arg name="z_pos" value="$(arg z_pos_1)"/>
         </include>
+        <include file="$(find p_mcarvalho_bringup)/launch/tp3_$(arg player_name_1)_visualize.launch">
+        </include>
     </group>
     
     <!--Bloco 4: Iniciar robo 2.-->
@@ -47,6 +49,8 @@
             <arg name="y_pos" value="$(arg y_pos_2)"/>
             <arg name="z_pos" value="$(arg z_pos_2)"/>
         </include>
+        <include file="$(find p_mcarvalho_bringup)/launch/tp3_$(arg player_name_2)_visualize.launch">
+        </include>
     </group>
 
     <!--Bloco 5: Iniciar robo 3.-->
@@ -60,6 +64,8 @@
             <arg name="x_pos" value="$(arg x_pos_3)"/>
             <arg name="y_pos" value="$(arg y_pos_3)"/>
             <arg name="z_pos" value="$(arg z_pos_3)"/>
+        </include>
+        <include file="$(find p_mcarvalho_bringup)/launch/tp3_$(arg player_name_3)_visualize.launch">
         </include>
     </group>
 

@@ -15,6 +15,7 @@ import tf2_geometry_msgs  # **Do not use geometry_msgs. Use this instead for Pos
 from datetime import datetime
 import numpy as np
 import subprocess
+import message_filters
 
 MAX_LIN_VEL = 2.22
 MAX_ANG_VEL = 2.84
@@ -22,11 +23,7 @@ MAX_ANG_VEL = 2.84
 LIN_VEL_STEP_SIZE = 0.05
 ANG_VEL_STEP_SIZE = 0.2
 
-def bash(player, state, blocking=True, verbose=False):
-
-    cmd = "gz marker -m 'action: ADD_MODIFY, type: TEXT, id: " + \
-          ", scale: {x:0.3, y:0.3, z:0.3}, text: \"" + player + "|" + state + "\", parent: \"" + player + \
-          "::base_footprint\", pose: {position: {x:0, y:0, z:0.5}, orientation: {x:0, y:0, z:0, w:1}}'"
+def bash(cmd, blocking=True, verbose=False):
 
     if verbose:
         print("Executing command: " + cmd)
@@ -41,13 +38,14 @@ class Driver:
 
     def __init__(self):
 
-        folder = os.getcwd() + '/p_mcarvalho_player/src/'
+        folder = os.getcwd() + '/src/p_mcarvalho_player/src/'
         self.teleop_timestamp = None
         self.name = rospy.get_name()
         self.name = self.name.strip('/') # remove initial /
         color = self.name.split('_', 1)[0]
 
         if 'red' in color:
+            self.msg_id = 10
             self.ally_color = 'red'
             self.hunter_color = 'blue'
             self.prey_color = 'green'
@@ -55,6 +53,7 @@ class Driver:
             self.hunter_color_bgr = (255,0,0)
             self.prey_color_bgr = (0,255,0)
         elif 'green' in color:
+            self.msg_id = 20
             self.ally_color = 'green'
             self.hunter_color = 'red'
             self.prey_color = 'blue'
@@ -62,6 +61,7 @@ class Driver:
             self.hunter_color_bgr = (0,0,255)
             self.prey_color_bgr = (255,0,0)
         elif 'blue' in color:
+            self.msg_id = 30
             self.ally_color = 'blue'
             self.hunter_color = 'green'
             self.prey_color = 'red'
@@ -87,12 +87,20 @@ class Driver:
 
         self.bridge = CvBridge()
 
-        self.front_camera_subscriber = rospy.Subscriber('/' + self.name + '/front_camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
-        self.back_camera_subscriber = rospy.Subscriber('/' + self.name + '/back_camera/rgb/image_raw', Image, self.backCameraReceivedCallback)
-        
+        #self.front_camera_subscriber = rospy.Subscriber('/' + self.name + '/front_camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
+        #self.back_camera_subscriber = rospy.Subscriber('/' + self.name + '/back_camera/rgb/image_raw', Image, self.backCameraReceivedCallback)
+        front_camera_subscriber = message_filters.Subscriber('/' + self.name + '/front_camera/rgb/image_raw', Image)
+        back_camera_subscriber = message_filters.Subscriber('/' + self.name + '/back_camera/rgb/image_raw', Image)
+        ts = message_filters.TimeSynchronizer([front_camera_subscriber, back_camera_subscriber], 2)
+        ts.registerCallback(self.analyzeImages)
+
         self.state = 'wandering'
 
-        bash(self.name, self.state, verbose=True)
+        update_marker_cmd = "gz marker -m 'action: ADD_MODIFY, type: TEXT, id: " + str(self.msg_id) + \
+          ", scale: {x:0.3, y:0.3, z:0.3}, text: \"" + self.name + "|" + self.state + "\", parent: \"" + self.name + \
+          "::base_footprint\", pose: {position: {x:0, y:0, z:0.5}, orientation: {x:0, y:0, z:0, w:1}}'"
+
+        bash(cmd=update_marker_cmd, verbose=True)
 
         self.target_linear_vel = 0.0
         self.target_angular_vel = 0.0
@@ -113,7 +121,8 @@ class Driver:
         
         self.teleop_subscriber = rospy.Subscriber('/' + self.name + '/teleop_vel', Twist, self.teleopReceivedCallBack)
         
-        self.timer = rospy.Timer(rospy.Duration(0.1), lambda x: self.analyzeImages() or self.drive())
+        #self.timer = rospy.Timer(rospy.Duration(0.1), lambda x: self.analyzeImages() or self.drive())
+        self.timer = rospy.Timer(rospy.Duration(0.1), lambda x: self.drive())
 
     def convert_to_json(self, filename):
         with open(filename) as f_in:
@@ -155,17 +164,26 @@ class Driver:
 
         self.front_camera_image = cv_image.copy()
         
-    def analyzeImages(self):
+    #def analyzeImages(self):
+    def analyzeImages(self, front_camera_image, back_camera_image):
         #cv2.imwrite('test_multiple.jpeg', self.front_camera_image)
-        
+        #print('hello')
         self.allies = []
         self.preys = []
         self.hunters = []
         
-        if self.front_camera_image is None or self.back_camera_image is None:
+        #if self.front_camera_image is None or self.back_camera_image is None:
+            #return
+
+        try:
+            cv_image_front = self.bridge.imgmsg_to_cv2(front_camera_image, "bgr8")
+            cv_image_back = self.bridge.imgmsg_to_cv2(back_camera_image, "bgr8")
+        except CvBridgeError as e:
+            print(e)
             return
         
-        width = self.front_camera_image.shape[1]
+        #width = self.front_camera_image.shape[1]
+        width = cv_image_front.shape[1]
    
         ally_mins = np.array([self.ally_limits['limits']['b']['min'], self.ally_limits['limits']['g']['min'], self.ally_limits['limits']['r']['min']])
         ally_maxs = np.array([self.ally_limits['limits']['b']['max'], self.ally_limits['limits']['g']['max'], self.ally_limits['limits']['r']['max']])
@@ -175,9 +193,13 @@ class Driver:
         prey_maxs = np.array([self.prey_limits['limits']['b']['max'], self.prey_limits['limits']['g']['max'], self.prey_limits['limits']['r']['max']])
 
         #\----FRONT CAMERA----/
-        ally_mask_front = cv2.inRange(self.front_camera_image, ally_mins, ally_maxs)
-        hunter_mask_front = cv2.inRange(self.front_camera_image, hunter_mins, hunter_maxs)
-        prey_mask_front = cv2.inRange(self.front_camera_image, prey_mins, prey_maxs)
+        #ally_mask_front = cv2.inRange(self.front_camera_image, ally_mins, ally_maxs)
+        #hunter_mask_front = cv2.inRange(self.front_camera_image, hunter_mins, hunter_maxs)
+        #prey_mask_front = cv2.inRange(self.front_camera_image, prey_mins, prey_maxs)
+
+        ally_mask_front = cv2.inRange(cv_image_front, ally_mins, ally_maxs)
+        hunter_mask_front = cv2.inRange(cv_image_front, hunter_mins, hunter_maxs)
+        prey_mask_front = cv2.inRange(cv_image_front, prey_mins, prey_maxs)
 
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(10,10))
 
@@ -195,7 +217,8 @@ class Driver:
             if area > 300:
                 self.allies.append(math.pi/4*(width//2-cX)/(width/2))
                 # draw cross on centroid
-                cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
+                #cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(cv_image_front, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
 
         output = cv2.connectedComponentsWithStats(hunter_mask_front, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
@@ -207,7 +230,8 @@ class Driver:
             if area > 300:
                 self.hunters.append(math.pi/4*(width//2-cX)/(width/2))
                 # draw cross on centroid
-                cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
+                #cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(cv_image_front, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
 
         output = cv2.connectedComponentsWithStats(prey_mask_front, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
@@ -219,13 +243,18 @@ class Driver:
             if area > 300:
                 self.preys.append(math.pi/4*(width//2-cX)/(width/2))
                 # draw cross on centroid
-                cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+                #cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(cv_image_front, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
 
 
         #\----BACK CAMERA----/
-        ally_mask_back = cv2.inRange(self.back_camera_image, ally_mins, ally_maxs)
-        hunter_mask_back = cv2.inRange(self.back_camera_image, hunter_mins, hunter_maxs)
-        prey_mask_back = cv2.inRange(self.back_camera_image, prey_mins, prey_maxs)
+        #ally_mask_back = cv2.inRange(self.back_camera_image, ally_mins, ally_maxs)
+        #hunter_mask_back = cv2.inRange(self.back_camera_image, hunter_mins, hunter_maxs)
+        #prey_mask_back = cv2.inRange(self.back_camera_image, prey_mins, prey_maxs)
+
+        ally_mask_back = cv2.inRange(cv_image_back, ally_mins, ally_maxs)
+        hunter_mask_back = cv2.inRange(cv_image_back, hunter_mins, hunter_maxs)
+        prey_mask_back = cv2.inRange(cv_image_back, prey_mins, prey_maxs)
 
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(10,10))
 
@@ -246,7 +275,8 @@ class Driver:
                 else:
                     self.allies.append(-math.pi/2+math.pi/4*(cX-width/2)/(width/2))
                 # draw cross on centroid
-                cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
+                #cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(cv_image_back, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
 
         output = cv2.connectedComponentsWithStats(hunter_mask_back, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
@@ -261,7 +291,8 @@ class Driver:
                 else:
                     self.hunters.append(-math.pi/2+math.pi/4*(cX-width/2)/(width/2))
                 # draw cross on centroid
-                cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
+                #cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(cv_image_back, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
 
         output = cv2.connectedComponentsWithStats(prey_mask_back, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
@@ -276,19 +307,22 @@ class Driver:
                 else:
                     self.preys.append(-math.pi/2+math.pi/4*(cX-width/2)/(width/2))
                 # draw cross on centroid
-                cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
-        
+                #cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(cv_image_back, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+
         #cv2.imshow('Front Camera', self.front_camera_image)
-        #cv2.imshow('Front Camera Ally Detector', ally_mask_front)
-        #cv2.imshow('Front Camera Hunter Detector', hunter_mask_front)
-        #cv2.imshow('Front Camera Prey Detector', prey_mask_front)
+        cv2.imshow('Front Camera', cv_image_front)
+        cv2.imshow('Front Camera Ally Detector', ally_mask_front)
+        cv2.imshow('Front Camera Hunter Detector', hunter_mask_front)
+        cv2.imshow('Front Camera Prey Detector', prey_mask_front)
 
         #cv2.imshow('Back Camera', self.back_camera_image)
-        #cv2.imshow('Back Camera Ally Detector', ally_mask_back)
-        #cv2.imshow('Back Camera Hunter Detector', hunter_mask_back)
-        #cv2.imshow('Back Camera Prey Detector', prey_mask_back)
+        cv2.imshow('Back Camera', cv_image_back)
+        cv2.imshow('Back Camera Ally Detector', ally_mask_back)
+        cv2.imshow('Back Camera Hunter Detector', hunter_mask_back)
+        cv2.imshow('Back Camera Prey Detector', prey_mask_back)
 
-        #cv2.waitKey(3)
+        cv2.waitKey(3)
     
     ## CODE ABOUT LIDAR ##
     def scanReceivedCallBack(self, scan): # intervals of 0.2s
@@ -332,6 +366,16 @@ class Driver:
                 self.state = "hunting"
             else:
                 self.state = "wandering"
+                
+        bash(cmd='gz marker -i ' + str(self.msg_id) + ' -d', verbose=True)
+
+        self.state = 'hunting'
+
+        update_marker_cmd = "gz marker -m 'action: ADD_MODIFY, type: TEXT, id: " + str(self.msg_id) + \
+          ", scale: {x:0.3, y:0.3, z:0.3}, text: \"" + self.name + "|" + self.state + "\", parent: \"" + self.name + \
+          "::base_footprint\", pose: {position: {x:0, y:0, z:0.5}, orientation: {x:0, y:0, z:0, w:1}}'"
+
+        bash(cmd=update_marker_cmd, verbose=True)
         
         if self.state == "wandering" or self.state == "fleeing":
             center_dist = min(self.getMinimumDistance(0,math.pi/24), self.getMinimumDistance(47/24*math.pi,2*math.pi))

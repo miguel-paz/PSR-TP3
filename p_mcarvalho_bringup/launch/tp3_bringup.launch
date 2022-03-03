@@ -42,11 +42,11 @@
             <arg name="z_pos" value="$(arg z_pos)"/>
         </include>
     </group>
-    <group if="$(arg visualize)">
+    <!-- <group if="$(arg visualize)"> -->
         <!--Include do visualize.launch-->
-        <include file="$(find p_mcarvalho_bringup)/launch/tp3_visualize.launch">
+        <!-- <include file="$(find p_mcarvalho_bringup)/launch/tp3_$(arg player_name)_visualize.launch">
         </include>
-    </group>
+    </group> -->
 
     <!--Include do teleop.launch-->
     <!--<include file="$(find p_mcarvalho_bringup)/launch/teleop.launch">
