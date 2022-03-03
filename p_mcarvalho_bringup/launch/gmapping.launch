@@ -1,6 +1,6 @@
 <launch>
     <!--Bloco 1: argumentos do launch file.-->
-    <arg name="player_name" default="ggreen1"/>
+    <arg name="player_name" default="green1"/>
 
     <group ns="$(arg player_name)">
         <node pkg="gmapping" type="slam_gmapping" name="gmapping" output="screen">

@@ -17,6 +17,7 @@
     <arg name="x_pos_3" default="5.0"/>
     <arg name="y_pos_3" default="0.0"/>
     <arg name="z_pos_3" default="0.0"/>
+    <arg name="referee" default="True"/>   <!-- Árbitro. -->
 
     <!--Bloco 2: carregar parametros exteriores ao launch file.-->
     <rosparam command="load" file="$(find p_mcarvalho_bringup)/params/game.yaml"/>
@@ -71,5 +72,11 @@
 
     <!--Visualização do nome do robô -->
     <node name="set_player_names" pkg="th_referee" type="set_player_names.py" output="screen"/>
+
+    <!--Launch do árbitro -->
+    <group if="$(arg referee)">
+        <node name="th_referee" pkg="th_referee" type="th_referee.py" output="screen" launch-prefix="gnome-terminal --command">
+        </node>
+    </group>
 
 </launch>
