@@ -369,8 +369,6 @@ class Driver:
                 
         bash(cmd='gz marker -i ' + str(self.msg_id) + ' -d', verbose=True)
 
-        self.state = 'hunting'
-
         update_marker_cmd = "gz marker -m 'action: ADD_MODIFY, type: TEXT, id: " + str(self.msg_id) + \
           ", scale: {x:0.3, y:0.3, z:0.3}, text: \"" + self.name + "|" + self.state + "\", parent: \"" + self.name + \
           "::base_footprint\", pose: {position: {x:0, y:0, z:0.5}, orientation: {x:0, y:0, z:0, w:1}}'"
