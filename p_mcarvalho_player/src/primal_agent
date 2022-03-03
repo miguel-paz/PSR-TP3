@@ -38,7 +38,7 @@ class Driver:
 
     def __init__(self):
 
-        folder = os.getcwd() + '/src/p_mcarvalho_player/src/'
+        folder = os.getcwd() + '/p_mcarvalho_player/src/'
         self.teleop_timestamp = None
         self.name = rospy.get_name()
         self.name = self.name.strip('/') # remove initial /
@@ -87,12 +87,8 @@ class Driver:
 
         self.bridge = CvBridge()
 
-        #self.front_camera_subscriber = rospy.Subscriber('/' + self.name + '/front_camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
-        #self.back_camera_subscriber = rospy.Subscriber('/' + self.name + '/back_camera/rgb/image_raw', Image, self.backCameraReceivedCallback)
-        front_camera_subscriber = message_filters.Subscriber('/' + self.name + '/front_camera/rgb/image_raw', Image)
-        back_camera_subscriber = message_filters.Subscriber('/' + self.name + '/back_camera/rgb/image_raw', Image)
-        ts = message_filters.TimeSynchronizer([front_camera_subscriber, back_camera_subscriber], 2)
-        ts.registerCallback(self.analyzeImages)
+        self.front_camera_subscriber = rospy.Subscriber('/' + self.name + '/front_camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
+        self.back_camera_subscriber = rospy.Subscriber('/' + self.name + '/back_camera/rgb/image_raw', Image, self.backCameraReceivedCallback)
 
         self.state = 'wandering'
 
@@ -121,8 +117,7 @@ class Driver:
         
         self.teleop_subscriber = rospy.Subscriber('/' + self.name + '/teleop_vel', Twist, self.teleopReceivedCallBack)
         
-        #self.timer = rospy.Timer(rospy.Duration(0.1), lambda x: self.analyzeImages() or self.drive())
-        self.timer = rospy.Timer(rospy.Duration(0.1), lambda x: self.drive())
+        self.timer = rospy.Timer(rospy.Duration(0.1), lambda x: self.analyzeImages() or self.drive())
 
     def convert_to_json(self, filename):
         with open(filename) as f_in:
@@ -164,26 +159,17 @@ class Driver:
 
         self.front_camera_image = cv_image.copy()
         
-    #def analyzeImages(self):
-    def analyzeImages(self, front_camera_image, back_camera_image):
+    def analyzeImages(self):
         #cv2.imwrite('test_multiple.jpeg', self.front_camera_image)
-        #print('hello')
+
         self.allies = []
         self.preys = []
         self.hunters = []
         
-        #if self.front_camera_image is None or self.back_camera_image is None:
-            #return
-
-        try:
-            cv_image_front = self.bridge.imgmsg_to_cv2(front_camera_image, "bgr8")
-            cv_image_back = self.bridge.imgmsg_to_cv2(back_camera_image, "bgr8")
-        except CvBridgeError as e:
-            print(e)
+        if self.front_camera_image is None or self.back_camera_image is None:
             return
         
-        #width = self.front_camera_image.shape[1]
-        width = cv_image_front.shape[1]
+        width = self.front_camera_image.shape[1]
    
         ally_mins = np.array([self.ally_limits['limits']['b']['min'], self.ally_limits['limits']['g']['min'], self.ally_limits['limits']['r']['min']])
         ally_maxs = np.array([self.ally_limits['limits']['b']['max'], self.ally_limits['limits']['g']['max'], self.ally_limits['limits']['r']['max']])
@@ -193,13 +179,9 @@ class Driver:
         prey_maxs = np.array([self.prey_limits['limits']['b']['max'], self.prey_limits['limits']['g']['max'], self.prey_limits['limits']['r']['max']])
 
         #\----FRONT CAMERA----/
-        #ally_mask_front = cv2.inRange(self.front_camera_image, ally_mins, ally_maxs)
-        #hunter_mask_front = cv2.inRange(self.front_camera_image, hunter_mins, hunter_maxs)
-        #prey_mask_front = cv2.inRange(self.front_camera_image, prey_mins, prey_maxs)
-
-        ally_mask_front = cv2.inRange(cv_image_front, ally_mins, ally_maxs)
-        hunter_mask_front = cv2.inRange(cv_image_front, hunter_mins, hunter_maxs)
-        prey_mask_front = cv2.inRange(cv_image_front, prey_mins, prey_maxs)
+        ally_mask_front = cv2.inRange(self.front_camera_image, ally_mins, ally_maxs)
+        hunter_mask_front = cv2.inRange(self.front_camera_image, hunter_mins, hunter_maxs)
+        prey_mask_front = cv2.inRange(self.front_camera_image, prey_mins, prey_maxs)
 
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(10,10))
 
@@ -217,8 +199,7 @@ class Driver:
             if area > 300:
                 self.allies.append(math.pi/4*(width//2-cX)/(width/2))
                 # draw cross on centroid
-                #cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
-                cv2.putText(cv_image_front, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
 
         output = cv2.connectedComponentsWithStats(hunter_mask_front, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
@@ -230,8 +211,7 @@ class Driver:
             if area > 300:
                 self.hunters.append(math.pi/4*(width//2-cX)/(width/2))
                 # draw cross on centroid
-                #cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
-                cv2.putText(cv_image_front, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
 
         output = cv2.connectedComponentsWithStats(prey_mask_front, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
@@ -243,18 +223,13 @@ class Driver:
             if area > 300:
                 self.preys.append(math.pi/4*(width//2-cX)/(width/2))
                 # draw cross on centroid
-                #cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
-                cv2.putText(cv_image_front, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
 
 
         #\----BACK CAMERA----/
-        #ally_mask_back = cv2.inRange(self.back_camera_image, ally_mins, ally_maxs)
-        #hunter_mask_back = cv2.inRange(self.back_camera_image, hunter_mins, hunter_maxs)
-        #prey_mask_back = cv2.inRange(self.back_camera_image, prey_mins, prey_maxs)
-
-        ally_mask_back = cv2.inRange(cv_image_back, ally_mins, ally_maxs)
-        hunter_mask_back = cv2.inRange(cv_image_back, hunter_mins, hunter_maxs)
-        prey_mask_back = cv2.inRange(cv_image_back, prey_mins, prey_maxs)
+        ally_mask_back = cv2.inRange(self.back_camera_image, ally_mins, ally_maxs)
+        hunter_mask_back = cv2.inRange(self.back_camera_image, hunter_mins, hunter_maxs)
+        prey_mask_back = cv2.inRange(self.back_camera_image, prey_mins, prey_maxs)
 
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(10,10))
 
@@ -275,8 +250,7 @@ class Driver:
                 else:
                     self.allies.append(-math.pi/2+math.pi/4*(cX-width/2)/(width/2))
                 # draw cross on centroid
-                #cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
-                cv2.putText(cv_image_back, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
 
         output = cv2.connectedComponentsWithStats(hunter_mask_back, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
@@ -291,8 +265,7 @@ class Driver:
                 else:
                     self.hunters.append(-math.pi/2+math.pi/4*(cX-width/2)/(width/2))
                 # draw cross on centroid
-                #cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
-                cv2.putText(cv_image_back, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
 
         output = cv2.connectedComponentsWithStats(prey_mask_back, 8, cv2.CV_32S)
         (numLabels, labels, stats, centroids) = output
@@ -307,20 +280,17 @@ class Driver:
                 else:
                     self.preys.append(-math.pi/2+math.pi/4*(cX-width/2)/(width/2))
                 # draw cross on centroid
-                #cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
-                cv2.putText(cv_image_back, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+                cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
 
-        #cv2.imshow('Front Camera', self.front_camera_image)
-        cv2.imshow('Front Camera', cv_image_front)
-        cv2.imshow('Front Camera Ally Detector', ally_mask_front)
-        cv2.imshow('Front Camera Hunter Detector', hunter_mask_front)
-        cv2.imshow('Front Camera Prey Detector', prey_mask_front)
+        cv2.imshow('Front Camera', self.front_camera_image)
+        #cv2.imshow('Front Camera Ally Detector', ally_mask_front)
+        #cv2.imshow('Front Camera Hunter Detector', hunter_mask_front)
+        #cv2.imshow('Front Camera Prey Detector', prey_mask_front)
 
-        #cv2.imshow('Back Camera', self.back_camera_image)
-        cv2.imshow('Back Camera', cv_image_back)
-        cv2.imshow('Back Camera Ally Detector', ally_mask_back)
-        cv2.imshow('Back Camera Hunter Detector', hunter_mask_back)
-        cv2.imshow('Back Camera Prey Detector', prey_mask_back)
+        cv2.imshow('Back Camera', self.back_camera_image)
+        #cv2.imshow('Back Camera Ally Detector', ally_mask_back)
+        #cv2.imshow('Back Camera Hunter Detector', hunter_mask_back)
+        #cv2.imshow('Back Camera Prey Detector', prey_mask_back)
 
         cv2.waitKey(3)
     
@@ -405,7 +375,6 @@ class Driver:
             self.publisher_command.publish(twist)
         
         elif self.state == "hunting":
-            print("hunting")
             self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.7 if abs(self.preys[0]) < math.pi/2 else 0, (LIN_VEL_STEP_SIZE/2.0))
             self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.preys[0], (ANG_VEL_STEP_SIZE/2.0))
             twist = Twist()
