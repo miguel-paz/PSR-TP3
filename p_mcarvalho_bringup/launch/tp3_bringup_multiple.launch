@@ -25,7 +25,7 @@
     <!--Bloco 3: Iniciar robo 1.-->
     <include file="$(find p_mcarvalho_bringup)/launch/tp3_bringup.launch">
         <arg name="model" value="$(arg model)"/>
-        <arg name="visualize" value="$(arg visualize)"/>
+        <arg name="visualize" value="true"/>
         <arg name="player_name" value="$(arg player_name_1)"/>
         <arg name="player_color" value="$(arg player_color_1)"/>
         <arg name="x_pos" value="$(arg x_pos_1)"/>
