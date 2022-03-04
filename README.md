@@ -92,11 +92,8 @@ Neste caso, este está configurado para quando o nó coach, ao receber novas men
 
 `roslaunch p_mcarvalho_bringup map_merge.launch`
 
-### Video example
-https://youtu.be/8Gsxrn0dBHs
-
 ### Video example of a full game
-
+https://youtu.be/xeEG7ZaPfLA
 
 # Códigos para iniciar a corrida contra relógio
 
