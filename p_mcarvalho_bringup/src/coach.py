@@ -20,22 +20,22 @@ class Coach:
 
         self.bridge = CvBridge()
 
-        # try:
-        #     sqliteConnection = sqlite3.connect('TP3_Django/psr_tp3_test/db.sqlite3')
-        #     cursor = sqliteConnection.cursor()
-        #     print("Successfully Connected to Django DB")
+        try:
+            sqliteConnection = sqlite3.connect('TP3_Django/psr_tp3_test/db.sqlite3')
+            cursor = sqliteConnection.cursor()
+            print("Successfully Connected to Django DB")
 
-        #     cursor.execute('''INSERT INTO Coach(name) VALUES (self.name)''')
+            cursor.execute("INSERT INTO TeamHunt_coach(name) VALUES (?)", (self.name,))
             
-        #     conn.commit()
-        #     cursor.close()
+            sqliteConnection.commit()
+            cursor.close()
 
-        # except sqlite3.Error as error:
-        #     print("Error while connecting to Django DB", error)
-        # finally:
-        #     if sqliteConnection:
-        #         sqliteConnection.close()
-        #         print("The Django DB connection is closed")
+        except sqlite3.Error as error:
+            print("Error while connecting to Django DB", error)
+        finally:
+            if sqliteConnection:
+                sqliteConnection.close()
+                print("The Django DB connection is closed")
 
         topic = self.name + "_comm"
         print('Subscribing to topic ' + topic)
@@ -72,25 +72,25 @@ class Coach:
 
         print(self.team)
 
-        # if valid_data:
-        #     try:
-        #         sqliteConnection = sqlite3.connect('TP3_Django/psr_tp3_test/db.sqlite3')
-        #         cursor = sqliteConnection.cursor()
-        #         print("Successfully Connected to Django DB")
+        if valid_data:
+            try:
+                sqliteConnection = sqlite3.connect('TP3_Django/psr_tp3_test/db.sqlite3')
+                cursor = sqliteConnection.cursor()
+                print("Successfully Connected to Django DB")
 
-        #         if new_rob:
-        #             cursor.execute('''INSERT INTO Robot(name,state,coach) VALUES (data.sender,data_current_state,self.name)''')
+                if new_rob:
+                    cursor.execute('''INSERT INTO TeamHunt_robot(name,state,coach_id) VALUES (?,?,?)''', (data.sender,data_current_state,self.name))
                 
-        #         cursor.execute('''INSERT INTO Message(sender,previous_state,current_state,reason,receiver) VALUES (data.sender)''')
-        #         conn.commit()
-        #         cursor.close()
+                cursor.execute('''INSERT INTO TeamHunt_message(sender_id,previous_state,current_state,reason,receiver_id) VALUES (?,?,?,?,?)''', (data.sender, data_previous_state, data_current_state, data_reason, self.name))
+                sqliteConnection.commit()
+                cursor.close()
 
-        #     except sqlite3.Error as error:
-        #         print("Error while connecting to Django DB", error)
-        #     finally:
-        #         if sqliteConnection:
-        #             sqliteConnection.close()
-        #             print("The Django DB connection is closed")
+            except sqlite3.Error as error:
+                print("Error while connecting to Django DB", error)
+            finally:
+                if sqliteConnection:
+                    sqliteConnection.close()
+                    print("The Django DB connection is closed")
 
 
         try:

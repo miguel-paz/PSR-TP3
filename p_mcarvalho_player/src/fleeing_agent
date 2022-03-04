@@ -1,0 +1,524 @@
+#!/usr/bin/env python3
+import copy
+import math
+import random
+import cv2
+import json
+import os
+from cv_bridge import CvBridge
+import rospy
+import tf2_ros
+from sensor_msgs.msg import Image
+from geometry_msgs.msg import Twist, PoseStamped
+from sensor_msgs.msg import LaserScan
+import tf2_geometry_msgs  # **Do not use geometry_msgs. Use this instead for PoseStamped
+from datetime import datetime
+import numpy as np
+import subprocess
+import message_filters
+from std_msgs.msg import String
+from p_mcarvalho_player.msg import Coach_msg
+import time
+
+MAX_LIN_VEL = 2.22
+MAX_ANG_VEL = 2.84
+
+LIN_VEL_STEP_SIZE = 0.2
+ANG_VEL_STEP_SIZE = 0.2
+LIN_VEL_STEP_SIZE_FLEE = 0.25
+ANG_VEL_STEP_SIZE_FLEE = 0.25
+
+def bash(cmd, blocking=True, verbose=False):
+
+    if verbose:
+        print("Executing command: " + cmd)
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if blocking:
+        for line in p.stdout.readlines():
+            print(line)
+            p.wait()
+
+
+class Driver:
+
+    def __init__(self):
+
+        folder = os.getcwd() + '/p_mcarvalho_player/src/'
+        #self.init_msg = "Init" #<robot_name>/Init/<current_state>
+        self.state_update_msg = "State_Update" #<robot_name>/State_Update/<previous_state>/<current_state>/<reason>
+        self.state_update_reason = " "
+        self.teleop_timestamp = None
+        self.name = rospy.get_name()
+        self.name = self.name.strip('/') # remove initial /
+        color = self.name.split('_', 1)[0]
+
+        if 'red' in color:
+            self.msg_id = 10
+            self.ally_color = 'red'
+            self.hunter_color = 'blue'
+            self.prey_color = 'green'
+            self.ally_color_bgr = (0,0,255)
+            self.hunter_color_bgr = (255,0,0)
+            self.prey_color_bgr = (0,255,0)
+        elif 'green' in color:
+            self.msg_id = 20
+            self.ally_color = 'green'
+            self.hunter_color = 'red'
+            self.prey_color = 'blue'
+            self.ally_color_bgr = (0,255,0)
+            self.hunter_color_bgr = (0,0,255)
+            self.prey_color_bgr = (255,0,0)
+        elif 'blue' in color:
+            self.msg_id = 30
+            self.ally_color = 'blue'
+            self.hunter_color = 'green'
+            self.prey_color = 'red'
+            self.ally_color_bgr = (255,0,0)
+            self.hunter_color_bgr = (0,255,0)
+            self.prey_color_bgr = (0,0,255)
+        else:
+            print('Color not recognized in name ' + color + ', shutting down')
+            quit()
+
+        self.allies = rospy.get_param(self.ally_color + '_players')
+        self.hunters = rospy.get_param(self.hunter_color + '_players')
+        self.preys = rospy.get_param(self.prey_color + '_players')
+
+        print('My player name is ' + self.name + ', I am team ' + self.ally_color + ' I am hunting ' + str(self.preys) + ' and fleeing from ' + str(self.hunters))
+
+
+        topic = self.ally_color + '_coach_comm'
+        self.pub_coach = rospy.Publisher(topic, Coach_msg, queue_size=10, latch=True)
+        #self.pub_coach = rospy.Publisher(topic, String, queue_size=10, latch=True)
+        print('Waiting for subscribers on topic ' + topic)
+        while self.pub_coach.get_num_connections() == 0:
+            continue
+
+        self.ally_limits = self.convert_to_json(folder + self.ally_color + '_limits.json')
+        self.hunter_limits = self.convert_to_json(folder + self.hunter_color + '_limits.json')
+        self.prey_limits = self.convert_to_json(folder + self.prey_color + '_limits.json')
+
+        self.front_camera_image = None
+        self.back_camera_image = None
+
+        self.bridge = CvBridge()
+
+        self.front_camera_subscriber = rospy.Subscriber('/' + self.name + '/front_camera/rgb/image_raw', Image, self.frontCameraReceivedCallback)
+        self.back_camera_subscriber = rospy.Subscriber('/' + self.name + '/back_camera/rgb/image_raw', Image, self.backCameraReceivedCallback)
+
+        self.state = 'wandering'
+
+        # #msg = self.name + '/' + self.init_msg + '/' + self.state
+        # coach_msg = Coach_msg()
+        # coach_msg.sender = self.name
+        # coach_msg.type = self.state_update_msg
+        # coach_msg.content = self.state
+        # coach_msg.front_camera = None
+        # coach_msg.back_camera = None
+        # #print('Sending message ' + str(coach_msg) + ' to coach')
+        # self.pub_coach.publish(coach_msg) #msg
+
+
+        update_marker_cmd = "gz marker -m 'action: ADD_MODIFY, type: TEXT, id: " + str(self.msg_id) + \
+          ", scale: {x:0.3, y:0.3, z:0.3}, text: \"" + self.name + "|" + self.state + "\", parent: \"" + self.name + \
+          "::base_footprint\", pose: {position: {x:0, y:0, z:0.5}, orientation: {x:0, y:0, z:0, w:1}}'"
+
+        bash(cmd=update_marker_cmd, verbose=True)
+
+        self.target_linear_vel = 0.0
+        self.target_angular_vel = 0.0
+        self.control_linear_vel = 0.0
+        self.control_angular_vel = 0.0
+
+        self.publisher_command = rospy.Publisher('/' + self.name + '/cmd_vel', Twist, queue_size=1)
+
+        self.tf_buffer = tf2_ros.Buffer()
+        self.listener = tf2_ros.TransformListener(self.tf_buffer)
+
+        self.goal = PoseStamped()
+        self.goal_subscriber = rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goalReceivedCallback)
+        
+        self.scan_range_max = 4
+        self.points = []
+        self.scan_subscriber = rospy.Subscriber('/' + self.name + '/scan', LaserScan, self.scanReceivedCallBack)
+        
+        self.teleop_subscriber = rospy.Subscriber('/' + self.name + '/teleop_vel', Twist, self.teleopReceivedCallBack)
+        
+        self.timer = rospy.Timer(rospy.Duration(0.1), lambda x: self.analyzeImages() or self.drive())
+
+    def convert_to_json(self, filename):
+        with open(filename) as f_in:
+            return json.load(f_in)
+    
+    def goalReceivedCallback(self, msg):
+        # verify is goal is on odom frame
+        target_frame = self.name + '/odom'
+        if msg.header.frame_id.split("/")[0] == self.name:
+            try:
+                self.goal = self.tf_buffer.transform(msg, target_frame, rospy.Duration(1))
+                self.state = "goal"
+                self.state_update_reason = 'Received new goal'
+            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                self.state = "wandering"
+                self.state_update_reason = ', Invalid goal'
+                rospy.logerr('Could not transform goal from ' + msg.header.frame_id + ' to ' + target_frame + '. Will ignore this goal.')
+
+    def teleopReceivedCallBack(self, msg):
+        self.teleop_timestamp = datetime.timestamp(datetime.now())
+        if self.state != "teleop":
+            self.state_update_reason = 'New State: Teleop, Received smartphone command'
+        self.state = "teleop"
+        self.publisher_command.publish(msg)
+
+    ## CODE ABOUT CAMERAS ##
+    def backCameraReceivedCallback(self, msg):
+        self.front_camera_image_raw = msg
+        try:
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        except CvBridgeError as e:
+            print(e)
+            return
+
+        self.back_camera_image = cv_image.copy()
+    
+    def frontCameraReceivedCallback(self, msg):
+        self.back_camera_image_raw = msg
+        try:
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        except CvBridgeError as e:
+            print(e)
+            return
+
+        self.front_camera_image = cv_image.copy()
+        
+    def analyzeImages(self):
+        #cv2.imwrite('test_multiple.jpeg', self.front_camera_image)
+
+        self.allies = []
+        self.preys = []
+        self.hunters = []
+        
+        if self.front_camera_image is None or self.back_camera_image is None:
+            return
+        
+        width = self.front_camera_image.shape[1]
+   
+        ally_mins = np.array([self.ally_limits['limits']['b']['min'], self.ally_limits['limits']['g']['min'], self.ally_limits['limits']['r']['min']])
+        ally_maxs = np.array([self.ally_limits['limits']['b']['max'], self.ally_limits['limits']['g']['max'], self.ally_limits['limits']['r']['max']])
+        hunter_mins = np.array([self.hunter_limits['limits']['b']['min'], self.hunter_limits['limits']['g']['min'], self.hunter_limits['limits']['r']['min']])
+        hunter_maxs = np.array([self.hunter_limits['limits']['b']['max'], self.hunter_limits['limits']['g']['max'], self.hunter_limits['limits']['r']['max']])
+        prey_mins = np.array([self.prey_limits['limits']['b']['min'], self.prey_limits['limits']['g']['min'], self.prey_limits['limits']['r']['min']])
+        prey_maxs = np.array([self.prey_limits['limits']['b']['max'], self.prey_limits['limits']['g']['max'], self.prey_limits['limits']['r']['max']])
+
+        #\----FRONT CAMERA----/
+        ally_mask_front = cv2.inRange(self.front_camera_image, ally_mins, ally_maxs)
+        hunter_mask_front = cv2.inRange(self.front_camera_image, hunter_mins, hunter_maxs)
+        prey_mask_front = cv2.inRange(self.front_camera_image, prey_mins, prey_maxs)
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(10,10))
+
+        ally_mask_front = cv2.morphologyEx(ally_mask_front,cv2.MORPH_CLOSE,kernel)
+        hunter_mask_front = cv2.morphologyEx(hunter_mask_front,cv2.MORPH_CLOSE,kernel)
+        prey_mask_front = cv2.morphologyEx(prey_mask_front,cv2.MORPH_CLOSE,kernel)
+
+        output = cv2.connectedComponentsWithStats(ally_mask_front, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 300:
+                self.allies.append(math.pi/4*(width//2-cX)/(width/2))
+                # draw cross on centroid
+                cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
+
+        output = cv2.connectedComponentsWithStats(hunter_mask_front, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 300:
+                self.hunters.append(math.pi/4*(width//2-cX)/(width/2))
+                # draw cross on centroid
+                cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
+
+        output = cv2.connectedComponentsWithStats(prey_mask_front, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 300:
+                self.preys.append(math.pi/4*(width//2-cX)/(width/2))
+                # draw cross on centroid
+                cv2.putText(self.front_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+
+
+        #\----BACK CAMERA----/
+        ally_mask_back = cv2.inRange(self.back_camera_image, ally_mins, ally_maxs)
+        hunter_mask_back = cv2.inRange(self.back_camera_image, hunter_mins, hunter_maxs)
+        prey_mask_back = cv2.inRange(self.back_camera_image, prey_mins, prey_maxs)
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(10,10))
+
+        ally_mask_back = cv2.morphologyEx(ally_mask_back,cv2.MORPH_CLOSE,kernel)
+        hunter_mask_back = cv2.morphologyEx(hunter_mask_back,cv2.MORPH_CLOSE,kernel)
+        prey_mask_back = cv2.morphologyEx(prey_mask_back,cv2.MORPH_CLOSE,kernel)
+
+        output = cv2.connectedComponentsWithStats(ally_mask_back, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 300:
+                if cX > (width//2):
+                    self.allies.append(math.pi/2+math.pi/4*(cX-width/2)/(width/2))
+                else:
+                    self.allies.append(-math.pi/2+math.pi/4*(cX-width/2)/(width/2))
+                # draw cross on centroid
+                cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.ally_color_bgr, 2, cv2.LINE_8)
+
+        output = cv2.connectedComponentsWithStats(hunter_mask_back, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 300:
+                if cX > (width//2):
+                    self.hunters.append(math.pi/2+math.pi/4*(cX-width/2)/(width/2))
+                else:
+                    self.hunters.append(-math.pi/2+math.pi/4*(cX-width/2)/(width/2))
+                # draw cross on centroid
+                cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.hunter_color_bgr, 2, cv2.LINE_8)
+
+        output = cv2.connectedComponentsWithStats(prey_mask_back, 8, cv2.CV_32S)
+        (numLabels, labels, stats, centroids) = output
+
+        for i in range(1, numLabels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            (cX, cY) = centroids[i]
+            cX, cY = int(cX), int(cY)
+            if area > 300:
+                if cX > (width//2):
+                    self.preys.append(math.pi/2+math.pi/4*(cX-width/2)/(width/2))
+                else:
+                    self.preys.append(-math.pi/2+math.pi/4*(cX-width/2)/(width/2))
+                # draw cross on centroid
+                cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
+
+        #cv2.imshow('Front Camera', self.front_camera_image)
+        #cv2.imshow('Front Camera Ally Detector', ally_mask_front)
+        #cv2.imshow('Front Camera Hunter Detector', hunter_mask_front)
+        #cv2.imshow('Front Camera Prey Detector', prey_mask_front)
+
+        #cv2.imshow('Back Camera', self.back_camera_image)
+        #cv2.imshow('Back Camera Ally Detector', ally_mask_back)
+        #cv2.imshow('Back Camera Hunter Detector', hunter_mask_back)
+        #cv2.imshow('Back Camera Prey Detector', prey_mask_back)
+
+        cv2.waitKey(3)
+    
+    ## CODE ABOUT LIDAR ##
+    def scanReceivedCallBack(self, scan): # intervals of 0.2s
+        self.scan_range_max = scan.range_max
+        
+        self.points = []
+        for idx, r in enumerate(scan.ranges):
+            if r >= scan.range_min and r <= scan.range_max:
+                theta = scan.angle_min + scan.angle_increment * idx
+                self.points.append([r, theta])
+    
+    def getMinimumDistance(self, angle_min, angle_max):
+        dist=self.scan_range_max
+        if len(self.points)!=0:
+            for p in self.points:
+                if p[1] >= angle_min and p[1]<= angle_max and p[0]<dist:
+                    dist = p[0]
+                
+        return dist
+    
+    ## CODE ABOUT DRIVING ##
+    def makeSimpleProfile(self, output, input, slop):
+        if input > output:
+            output = min( input, output + slop )
+        elif input < output:
+            output = max( input, output - slop )
+        else:
+            output = input
+
+        return output
+    
+    # timer triggered callback to decide actions to take
+    def drive(self):
+        prev_state = self.state
+
+        if self.state_update_reason[0]!=",":
+            self.state_update_reason=" "
+        if self.state == "teleop" and datetime.timestamp(datetime.now()) - self.teleop_timestamp<1:
+            return
+        elif self.state == "teleop":
+            self.state_update_reason = ', Teleop timed out'
+        
+        if self.state != "goal" and not (self.target_linear_vel==0 and self.target_angular_vel!=0):
+            if len(self.hunters)>0:
+                self.state = "fleeing"
+                self.state_update_reason = 'Saw hunter at ' + str(self.hunters[0]) + " radians" + self.state_update_reason
+            elif len(self.preys)>0:
+                self.state = "hunting"
+                self.state_update_reason = 'Saw prey at ' + str(self.preys[0]) + " radians" + self.state_update_reason
+            else:
+                self.state = "wandering"
+                self.state_update_reason = "Nothing to report" + self.state_update_reason
+
+        if self.state != prev_state:
+            msg = prev_state + '/' + self.state + '/' + self.state_update_reason
+            coach_msg = Coach_msg()
+            coach_msg.sender = self.name
+            coach_msg.type = self.state_update_msg
+            coach_msg.content = msg
+            coach_msg.front_camera = self.front_camera_image_raw
+            coach_msg.back_camera = self.back_camera_image_raw
+            self.pub_coach.publish(coach_msg)
+
+            bash(cmd='gz marker -i ' + str(self.msg_id) + ' -d', verbose=True)
+
+            update_marker_cmd = "gz marker -m 'action: ADD_MODIFY, type: TEXT, id: " + str(self.msg_id) + \
+            ", scale: {x:0.3, y:0.3, z:0.3}, text: \"" + self.name + "|" + self.state + "\", parent: \"" + self.name + \
+            "::base_footprint\", pose: {position: {x:0, y:0, z:0.5}, orientation: {x:0, y:0, z:0, w:1}}'"
+
+            bash(cmd=update_marker_cmd, verbose=True)
+        
+        center_dist = min(self.getMinimumDistance(0,math.pi/24), self.getMinimumDistance(47/24*math.pi,2*math.pi))
+        left_dist = self.getMinimumDistance(math.pi/6, math.pi/2)
+        right_dist = self.getMinimumDistance(3/2*math.pi,11/6*math.pi)
+        if self.state == "wandering":
+            if center_dist<0.5:
+                self.target_linear_vel = -0.2
+                self.target_angular_vel = 0
+            elif center_dist>2.5 and left_dist>0.3 and right_dist>0.3:
+                self.target_linear_vel = 0.7
+                self.target_angular_vel = 0
+            else:
+                self.target_linear_vel = 0.2
+                if left_dist<2 or right_dist<2:
+                    if left_dist>right_dist:
+                        self.target_angular_vel=0.5
+                    else:
+                        self.target_angular_vel=-0.5
+                
+                elif not self.target_angular_vel:
+                    self.target_angular_vel = 0.5 if random.random()>0.5 else -0.5
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, self.target_linear_vel, (LIN_VEL_STEP_SIZE/2.0))
+            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+
+        elif self.state == "fleeing":
+            hunter_front_left, hunter_front_right, hunter_back_right, hunter_back_left = False, False, False, False
+            for h in self.hunters:
+                if math.pi/2 > h > 0:
+                    hunter_front_left = True
+                elif math.pi > h > math.pi/2:
+                    hunter_back_left = True
+                elif 0 > h > math.pi/2:
+                    hunter_front_right = True
+                else:
+                    hunter_back_right = True
+    
+            if center_dist>2.5 and left_dist>0.3 and right_dist>0.3:
+                if (hunter_back_right or hunter_front_left) and not hunter_front_right: #should go right
+                    if right_dist > 2: #has space on the right
+                        self.target_linear_vel = 1.2
+                        self.target_angular_vel = 0.5
+
+                    else: #has no space right has to turnaround
+                        self.target_linear_vel = 0
+                        self.target_angular_vel = -1
+                elif not hunter_front_left and (hunter_back_left or hunter_front_right): #should go left
+                    if left_dist > 2: #has space on the left
+                        self.target_linear_vel = 1.2
+                        self.target_angular_vel = 0.5
+
+                    else: #has no space left has to turnaround
+                        self.target_linear_vel = 0
+                        self.target_angular_vel = 1
+                else:
+                    self.target_angular_vel = 0
+                    self.target_linear_vel = 1.2
+            else:
+                self.target_linear_vel = 0.2
+                if left_dist<2 or right_dist<2:
+                    if left_dist>right_dist:
+                        self.target_angular_vel=0.5
+                    else:
+                        self.target_angular_vel=-0.5
+                
+                elif hunter_back_left and hunter_front_right:
+                    self.target_angular_vel = -0.5 
+                else:
+                    self.target_angular_vel = 0.5
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, self.target_linear_vel, (LIN_VEL_STEP_SIZE_FLEE/2.0))
+            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE_FLEE/2.0))
+
+        elif self.state == "hunting":
+            if len(self.preys)>0:
+                if abs(self.preys[0]) < math.pi/2: #front
+                    self.target_linear_vel = 0.7
+                    self.target_angular_vel = self.preys[0]
+                else: #back
+                    self.target_linear_vel = 0
+                    self.target_angular_vel = math.pi if self.control_angular_vel>0 else -math.pi
+            else:
+                self.target_linear_vel = 0
+                self.target_angular_vel -= self.control_angular_vel
+                if abs(self.target_angular_vel) < 0.2:
+                    self.state="wandering"
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, self.target_linear_vel, (LIN_VEL_STEP_SIZE/2.0))
+            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+
+        
+        elif self.state=="goal":
+            goal_copy = copy.deepcopy(self.goal)  # make sure we don't change the stamp field of the goal
+            goal_copy.header.stamp = rospy.Time.now()
+
+            goal_in_base_link = self.tf_buffer.transform(goal_copy, self.name + '/base_footprint', rospy.Duration(1))
+
+            x = goal_in_base_link.pose.position.x
+            y = goal_in_base_link.pose.position.y
+            angle = math.atan2(y,x)
+            
+            if x**2 + y**2 < 1 or center_dist<1.5:
+                self.state = "wandering"
+                self.state_update_reason = ', Goal reached'
+
+            self.target_linear_vel = 0.7 if angle < math.pi/2 or angle > 3*math.pi/2 else 0
+            self.target_angular_vel = angle if angle < math.pi else angle-math.pi*2
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, self.target_linear_vel, (LIN_VEL_STEP_SIZE/2.0))
+            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+        
+            
+        twist = Twist()
+        twist.linear.x = self.control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
+        twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = self.control_angular_vel
+        self.publisher_command.publish(twist)
+
+
+def main():
+    # ---------------------------------------------------
+    # INITIALIZATION
+    # ---------------------------------------------------
+    default_node_name = 'p_mcarvalho_driver'
+    rospy.init_node(default_node_name, anonymous=False)
+
+    driver = Driver()
+    rospy.spin()
+
+
+if __name__ == '__main__':
+    main()

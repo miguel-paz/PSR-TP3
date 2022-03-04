@@ -5,6 +5,10 @@ from django.db import models
 class Coach(models.Model):
     name = models.CharField(max_length=200, primary_key=True)
 
+    def __str__(self):
+        return self.name
+
+
 class Robot(models.Model):
     name = models.CharField(max_length=200, primary_key=True)
     state = models.CharField(max_length=200)
@@ -21,4 +25,4 @@ class Message(models.Model):
     receiver = models.ForeignKey(Coach, on_delete=models.CASCADE)
 
     def __str__(self):
-        return self.id
+        return str(self.id)
