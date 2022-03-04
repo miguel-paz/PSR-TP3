@@ -11,6 +11,12 @@
     <arg name="fnr" default="false"/>-->
     
     <group ns="$(arg player_name)">
+        <param name="tf_prefix" value="$(arg player_name)"></param>
+        <param name="/map_merge/init_pose_x" value="$(arg x_pos)"></param>
+        <param name="/map_merge/init_pose_y" value="$(arg y_pos)"></param>
+        <param name="/map_merge/init_pose_z" value="$(arg z_pos)"></param>
+        <param name="/map_merge/init_pose_yaw" value="0"></param>
+
         <!--Bloco 2: Carregamento do xacro do robot para o parâmetro robot_description.-->
         <param name="robot_description" command="$(find xacro)/xacro --inorder $(find p_mcarvalho_description)/urdf/tp3_p_mcarvalho.urdf.xacro player_name:=$(arg player_name) player_color:=$(arg player_color)" />
 
