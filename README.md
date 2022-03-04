@@ -90,6 +90,8 @@ rosrun p_mcarvalho_bringup coach.py __name:=<"cor da equipa coached">_coach
 ### Video example
 https://youtu.be/8Gsxrn0dBHs
 
+### Video example of a full game
+
 
 # Códigos para iniciar a corrida contra relógio
 
