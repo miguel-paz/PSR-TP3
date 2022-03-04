@@ -21,8 +21,10 @@ from std_msgs.msg import String
 MAX_LIN_VEL = 2.22
 MAX_ANG_VEL = 2.84
 
-LIN_VEL_STEP_SIZE = 0.05
+LIN_VEL_STEP_SIZE = 0.2
 ANG_VEL_STEP_SIZE = 0.2
+LIN_VEL_STEP_SIZE_FLEE = 0.25
+ANG_VEL_STEP_SIZE_FLEE = 0.25
 
 def bash(cmd, blocking=True, verbose=False):
 
@@ -39,7 +41,7 @@ class Driver:
 
     def __init__(self):
 
-        folder = os.getcwd() + '/src/p_mcarvalho_player/src/'
+        folder = os.getcwd() + '/p_mcarvalho_player/src/'
         self.init_msg = "Init" #<robot_name>/Init/<current_state>
         self.state_update_msg = "State_Update" #<robot_name>/State_Update/<previous_state>/<current_state>/<reason>
         self.state_update_reason = ""
@@ -290,12 +292,12 @@ class Driver:
                 # draw cross on centroid
                 cv2.putText(self.back_camera_image, '+', (cX, cY), cv2.FONT_ITALIC, 1, self.prey_color_bgr, 2, cv2.LINE_8)
 
-        cv2.imshow('Front Camera', self.front_camera_image)
+        #cv2.imshow('Front Camera', self.front_camera_image)
         #cv2.imshow('Front Camera Ally Detector', ally_mask_front)
         #cv2.imshow('Front Camera Hunter Detector', hunter_mask_front)
         #cv2.imshow('Front Camera Prey Detector', prey_mask_front)
 
-        cv2.imshow('Back Camera', self.back_camera_image)
+        #cv2.imshow('Back Camera', self.back_camera_image)
         #cv2.imshow('Back Camera Ally Detector', ally_mask_back)
         #cv2.imshow('Back Camera Hunter Detector', hunter_mask_back)
         #cv2.imshow('Back Camera Prey Detector', prey_mask_back)
@@ -339,7 +341,7 @@ class Driver:
         if self.state == "teleop" and datetime.timestamp(datetime.now()) - self.teleop_timestamp<1:
             return
         
-        if self.state != "goal":
+        if self.state != "goal" and not (self.target_linear_vel==0 and self.target_angular_vel!=0):
             if len(self.hunters)>0:
                 self.state = "fleeing"
             elif len(self.preys)>0:
@@ -347,6 +349,7 @@ class Driver:
             else:
                 self.state = "wandering"
 
+        """
         if self.state != prev_state:
             self.pub_coach.publish(self.name + '/' + self.state_update_msg + '/' + prev_state + '/' + self.state + '/' + self.state_update_reason)
 
@@ -357,20 +360,19 @@ class Driver:
             "::base_footprint\", pose: {position: {x:0, y:0, z:0.5}, orientation: {x:0, y:0, z:0, w:1}}'"
 
             bash(cmd=update_marker_cmd, verbose=True)
+        """
         
-        if self.state == "wandering" or self.state == "fleeing":
-            center_dist = min(self.getMinimumDistance(0,math.pi/24), self.getMinimumDistance(47/24*math.pi,2*math.pi))
-            left_dist = self.getMinimumDistance(math.pi/6, math.pi/2)
-            right_dist = self.getMinimumDistance(3/2*math.pi,11/6*math.pi)
-            
+        print(self.state)
+        center_dist = min(self.getMinimumDistance(0,math.pi/24), self.getMinimumDistance(47/24*math.pi,2*math.pi))
+        left_dist = self.getMinimumDistance(math.pi/6, math.pi/2)
+        right_dist = self.getMinimumDistance(3/2*math.pi,11/6*math.pi)
+        if self.state == "wandering":
             if center_dist>2.5 and left_dist>0.3 and right_dist>0.3:
+                self.target_linear_vel = 0.7
                 self.target_angular_vel = 0
                 
-                self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.7, (LIN_VEL_STEP_SIZE/2.0))
-                self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, 0, (ANG_VEL_STEP_SIZE/2.0))
-
             else:
-                self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.2, (LIN_VEL_STEP_SIZE/2.0))
+                self.target_linear_vel = 0.2
                 if left_dist<2 or right_dist<2:
                     if left_dist>right_dist:
                         self.target_angular_vel=0.5
@@ -379,21 +381,72 @@ class Driver:
                 
                 elif not self.target_angular_vel:
                     self.target_angular_vel = 0.5 if random.random()>0.5 else -0.5
-                    
-                self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, self.target_linear_vel, (LIN_VEL_STEP_SIZE/2.0))
+            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
 
-            twist = Twist()
-            twist.linear.x = self.control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
-            twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = self.control_angular_vel
-            self.publisher_command.publish(twist)
-        
+        elif self.state == "fleeing":
+            hunter_front_left, hunter_front_right, hunter_back_right, hunter_back_left = False, False, False, False
+            for h in self.hunters:
+                if math.pi/2 > h > 0:
+                    hunter_front_left = True
+                elif math.pi > h > math.pi/2:
+                    hunter_back_left = True
+                elif 0 > h > math.pi/2:
+                    hunter_front_right = True
+                else:
+                    hunter_back_right = True
+    
+            if center_dist>2.5 and left_dist>0.3 and right_dist>0.3:
+                if (hunter_back_right or hunter_front_left) and not hunter_front_right: #should go right
+                    if right_dist > 2: #has space on the right
+                        self.target_linear_vel = 1.2
+                        self.target_angular_vel = 0.5
+
+                    else: #has no space right has to turnaround
+                        self.target_linear_vel = 0
+                        self.target_angular_vel = -1
+                elif not hunter_front_left and (hunter_back_left or hunter_front_right): #should go left
+                    if left_dist > 2: #has space on the left
+                        self.target_linear_vel = 1.2
+                        self.target_angular_vel = 0.5
+
+                    else: #has no space left has to turnaround
+                        self.target_linear_vel = 0
+                        self.target_angular_vel = 1
+                else:
+                    self.target_angular_vel = 0
+                    self.target_linear_vel = 1.2
+            else:
+                self.target_linear_vel = 0.2
+                if left_dist<2 or right_dist<2:
+                    if left_dist>right_dist:
+                        self.target_angular_vel=0.5
+                    else:
+                        self.target_angular_vel=-0.5
+                
+                elif hunter_back_left and hunter_front_right:
+                    self.target_angular_vel = -0.5 
+                else:
+                    self.target_angular_vel = 0.5
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, self.target_linear_vel, (LIN_VEL_STEP_SIZE_FLEE/2.0))
+            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE_FLEE/2.0))
+
         elif self.state == "hunting":
-            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.7 if abs(self.preys[0]) < math.pi/2 else 0, (LIN_VEL_STEP_SIZE/2.0))
-            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.preys[0], (ANG_VEL_STEP_SIZE/2.0))
-            twist = Twist()
-            twist.linear.x = self.control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
-            twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = self.control_angular_vel
-            self.publisher_command.publish(twist)
+            if len(self.preys)>0:
+                if abs(self.preys[0]) < math.pi/2: #front
+                    self.target_linear_vel = 0.7
+                    self.target_angular_vel = self.preys[0]
+                else: #back
+                    self.target_linear_vel = 0
+                    self.target_angular_vel = math.pi if self.control_angular_vel>0 else -math.pi
+            else:
+                self.target_linear_vel = 0
+                self.target_angular_vel -= self.control_angular_vel
+                if abs(self.target_angular_vel) < 0.2:
+                    self.state="wandering"
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, self.target_linear_vel, (LIN_VEL_STEP_SIZE/2.0))
+            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+
         
         elif self.state=="goal":
             goal_copy = copy.deepcopy(self.goal)  # make sure we don't change the stamp field of the goal
@@ -405,17 +458,19 @@ class Driver:
             y = goal_in_base_link.pose.position.y
             angle = math.atan2(y,x)
             
-            center_dist = min(self.getMinimumDistance(0,math.pi/24), self.getMinimumDistance(47/24*math.pi,2*math.pi))
-            
             if x**2 + y**2 < 1 or center_dist<1.5:
                 self.state = "wandering"
 
-            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, 0.7 if angle < math.pi/2 or angle > 3*math.pi/2 else 0, (LIN_VEL_STEP_SIZE/2.0))
-            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, angle if angle < math.pi else angle-math.pi*2, (ANG_VEL_STEP_SIZE/2.0))
-            twist = Twist()
-            twist.linear.x = self.control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
-            twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = self.control_angular_vel
-            self.publisher_command.publish(twist)
+            self.target_linear_vel = 0.7 if angle < math.pi/2 or angle > 3*math.pi/2 else 0
+            self.target_angular_vel = angle if angle < math.pi else angle-math.pi*2
+            self.control_linear_vel = self.makeSimpleProfile(self.control_linear_vel, self.target_linear_vel, (LIN_VEL_STEP_SIZE/2.0))
+            self.control_angular_vel = self.makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+        
+            
+        twist = Twist()
+        twist.linear.x = self.control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
+        twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = self.control_angular_vel
+        self.publisher_command.publish(twist)
 
 
 def main():
