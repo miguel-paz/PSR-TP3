@@ -45,34 +45,34 @@ Neste caso, este está configurado para quando o nó coach, ao receber novas men
 # Códigos para iniciar o jogo da apanhada
 
 ## Arenas:
-  roslaunch p_mcarvalho_bringup tp3_gazebo_arena_1.launch
+  `roslaunch p_mcarvalho_bringup tp3_gazebo_arena_1.launch`
 
-  roslaunch p_mcarvalho_bringup tp3_gazebo_arena_2.launch
+  `roslaunch p_mcarvalho_bringup tp3_gazebo_arena_2.launch`
 
-  roslaunch p_mcarvalho_bringup tp3_gazebo_arena_3.launch
+  `roslaunch p_mcarvalho_bringup tp3_gazebo_arena_3.launch`
 
 
 ## 3 Robôs e Árbitro em terminal à parte:
-  roslaunch p_mcarvalho_bringup tp3_bringup_multiple.launch
+  `roslaunch p_mcarvalho_bringup tp3_bringup_multiple.launch`
 
 
 ## Apenas Árbitro:
-  rosrun th_referee th_referee.py
+ `rosrun th_referee th_referee.py`
 
 
 ## Lançamento de inteligência artifical de robôs: 
-rosrun p_mcarvalho_player primal_agent __name:=<"nome do robô">
+`rosrun p_mcarvalho_player primal_agent __name:=<"nome do robô">`
 
  p.e:
- rosrun p_mcarvalho_player primal_agent __name:=red1
+ `rosrun p_mcarvalho_player primal_agent __name:=red1`
 
 
 ## Condução manual através de telemóvel: 
-roslaunch p_mcarvalho_bringup teleop.launch
+`roslaunch p_mcarvalho_bringup teleop.launch`
 
 
 ## Lançamento do nó coach:
-rosrun p_mcarvalho_bringup coach.py __name:=<"cor da equipa coached">_coach
+`rosrun p_mcarvalho_bringup coach.py __name:=<"cor da equipa coached">_coach`
 
 ## Lançamento do Django:
 `cd TP3_Django`
@@ -87,6 +87,11 @@ rosrun p_mcarvalho_bringup coach.py __name:=<"cor da equipa coached">_coach
 (Inserir as credenciais: username: psr_14
                          password: psr4life)
 
+## Merge Mapping(WIP):
+(With more than one robot running)
+
+`roslaunch p_mcarvalho_bringup map_merge.launch`
+
 ### Video example
 https://youtu.be/8Gsxrn0dBHs
 
@@ -97,15 +102,15 @@ https://youtu.be/8Gsxrn0dBHs
 
 
 ## Pista FNR:
-roslaunch p_mcarvalho_bringup fnr_map.launch
+`roslaunch p_mcarvalho_bringup fnr_map.launch`
 
 
 ## Launch de um robô:
-roslaunch p_mcarvalho_bringup tp3_bringup.launch fnr:=true
+`roslaunch p_mcarvalho_bringup tp3_bringup.launch fnr:=true`
 
 
 ## Condução manual através de telemóvel: 
-roslaunch p_mcarvalho_bringup teleop.launch fnr:=true
+`roslaunch p_mcarvalho_bringup teleop.launch fnr:=true`
 
 ### Video example
 https://youtu.be/PH_SFkdkvpU
