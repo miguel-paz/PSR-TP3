@@ -195,6 +195,8 @@
     </inertial>
   </link>
 
+    <!-- First Camera -->
+
   <joint name="front_camera_joint" type="fixed">
     <origin xyz="-0.50 -0.011 0.20" rpy="0 0.2 0"/>
     <parent link="base_link"/>
@@ -225,6 +227,7 @@
   <link name="front_camera_rgb_optical_frame"/>
 
   <!-- Second Camera -->
+
   <joint name="back_camera_joint" type="fixed">
     <origin xyz="-0.176 -0.011 0.084" rpy="0 0 3.14"/>
     <parent link="base_link"/>
