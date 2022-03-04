@@ -41,7 +41,7 @@
                 <include file="$(find p_mcarvalho_bringup)/launch/tp3_visualize_fnr.launch"/>
             </group>
             <group unless="$(arg fnr)">
-                <include file="$(find p_mcarvalho_bringup)/launch/tp3_visualize.launch"/>
+                <include file="$(find p_mcarvalho_bringup)/launch/tp3_$(arg player_name)_visualize.launch"/>
             </group>
 
             <!--Bloco 6: Include do gmapping.launch-->
