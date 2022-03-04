@@ -76,3 +76,6 @@ roslaunch p_mcarvalho_bringup tp3_bringup.launch fnr:=true
 
 ## Condução manual através de telemóvel: 
 roslaunch p_mcarvalho_bringup teleop.launch fnr:=true
+
+### Video example
+https://youtu.be/PH_SFkdkvpU
