@@ -1,5 +1,8 @@
 # Programação em Sistemas Robóticos - Trabalho 3 ; Grupo 14 - Team Hunt e Corrida Manual na FNR
-
+    Miguel Carvalho; Nº:80169
+    Pedro Amaral: Nº:93283
+    Pedro Tavares; Nº:93103
+    Telmo Fernandes; Nº:93081
 ## Sumário
 
 
