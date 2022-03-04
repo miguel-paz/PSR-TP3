@@ -17,6 +17,8 @@ import numpy as np
 import subprocess
 import message_filters
 from std_msgs.msg import String
+from p_mcarvalho_player.msg import Coach_msg
+import time
 
 MAX_LIN_VEL = 2.22
 MAX_ANG_VEL = 2.84
@@ -41,8 +43,8 @@ class Driver:
 
     def __init__(self):
 
-        folder = os.getcwd() + '/p_mcarvalho_player/src/'
-        self.init_msg = "Init" #<robot_name>/Init/<current_state>
+        folder = os.getcwd() + '/src/p_mcarvalho_player/src/'
+        #self.init_msg = "Init" #<robot_name>/Init/<current_state>
         self.state_update_msg = "State_Update" #<robot_name>/State_Update/<previous_state>/<current_state>/<reason>
         self.state_update_reason = ""
         self.teleop_timestamp = None
@@ -75,7 +77,7 @@ class Driver:
             self.hunter_color_bgr = (0,255,0)
             self.prey_color_bgr = (0,0,255)
         else:
-            print('Color ' + color + ' not recognized, shutting down')
+            print('Color not recognized in name ' + color + ', shutting down')
             quit()
 
         self.allies = rospy.get_param(self.ally_color + '_players')
@@ -84,7 +86,13 @@ class Driver:
 
         print('My player name is ' + self.name + ', I am team ' + self.ally_color + ' I am hunting ' + str(self.preys) + ' and fleeing from ' + str(self.hunters))
 
-        self.pub_coach = rospy.Publisher('coach_comm', String, queue_size=10)
+
+        topic = self.ally_color + '_coach_comm'
+        self.pub_coach = rospy.Publisher(topic, Coach_msg, queue_size=10, latch=True)
+        #self.pub_coach = rospy.Publisher(topic, String, queue_size=10, latch=True)
+        while self.pub_coach.get_num_connections() == 0:
+            print('Waiting for subscribers on topic ' + topic)
+            time.sleep(2)
 
         self.ally_limits = self.convert_to_json(folder + self.ally_color + '_limits.json')
         self.hunter_limits = self.convert_to_json(folder + self.hunter_color + '_limits.json')
@@ -100,7 +108,16 @@ class Driver:
 
         self.state = 'wandering'
 
-        self.pub_coach.publish(self.name + '/' + self.init_msg + '/' + self.state)
+        # #msg = self.name + '/' + self.init_msg + '/' + self.state
+        # coach_msg = Coach_msg()
+        # coach_msg.sender = self.name
+        # coach_msg.type = self.state_update_msg
+        # coach_msg.content = self.state
+        # coach_msg.front_camera = None
+        # coach_msg.back_camera = None
+        # #print('Sending message ' + str(coach_msg) + ' to coach')
+        # self.pub_coach.publish(coach_msg) #msg
+
 
         update_marker_cmd = "gz marker -m 'action: ADD_MODIFY, type: TEXT, id: " + str(self.msg_id) + \
           ", scale: {x:0.3, y:0.3, z:0.3}, text: \"" + self.name + "|" + self.state + "\", parent: \"" + self.name + \
@@ -152,6 +169,7 @@ class Driver:
 
     ## CODE ABOUT CAMERAS ##
     def backCameraReceivedCallback(self, msg):
+        self.front_camera_image_raw = msg
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except CvBridgeError as e:
@@ -161,6 +179,7 @@ class Driver:
         self.back_camera_image = cv_image.copy()
     
     def frontCameraReceivedCallback(self, msg):
+        self.back_camera_image_raw = msg
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except CvBridgeError as e:
@@ -351,7 +370,15 @@ class Driver:
 
         """
         if self.state != prev_state:
-            self.pub_coach.publish(self.name + '/' + self.state_update_msg + '/' + prev_state + '/' + self.state + '/' + self.state_update_reason)
+            msg = prev_state + '/' + self.state + '/' + self.state_update_reason
+            coach_msg = Coach_msg()
+            coach_msg.sender = self.name
+            coach_msg.type = self.state_update_msg
+            coach_msg.content = msg
+            coach_msg.front_camera = self.front_camera_image_raw
+            coach_msg.back_camera = self.back_camera_image_raw
+            print('Sending message ' + str(coach_msg) + ' to coach')
+            self.pub_coach.publish(coach_msg)
 
             bash(cmd='gz marker -i ' + str(self.msg_id) + ' -d', verbose=True)
 
