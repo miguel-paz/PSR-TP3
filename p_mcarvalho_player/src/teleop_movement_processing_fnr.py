@@ -37,14 +37,6 @@ class Teleop_Server:
         self.Turning = False
         self.pub = rospy.Publisher('/p_mcarvalho/cmd_vel', Twist, queue_size=1)
 
-    def makeSimpleProfile(self, output, input, slop):
-        if input > output:
-            output = min( input, output + slop )
-        elif input < output:
-            output = max( input, output - slop )
-        else:
-            output = input
-        return output
 
     def callbackTeleopReceived(self, msg):
         print(msg)

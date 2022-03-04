@@ -7,13 +7,17 @@
     <arg name="x_pos" default="-5.0"/>
     <arg name="y_pos" default="3.0"/>
     <arg name="z_pos" default="0.0"/>
-    <!--<arg name="agent" default="0.0"/>
-    <arg name="fnr" default="false"/>-->
+    <!--<arg name="agent" default="0.0"/>-->
+    <arg name="fnr" default="false"/>
     
     <group ns="$(arg player_name)">
         <!--Bloco 2: Carregamento do xacro do robot para o parâmetro robot_description.-->
-        <param name="robot_description" command="$(find xacro)/xacro --inorder $(find p_mcarvalho_description)/urdf/tp3_p_mcarvalho.urdf.xacro player_name:=$(arg player_name) player_color:=$(arg player_color)" />
-
+        <group if="$(arg fnr)">
+            <param name="robot_description" command="$(find xacro)/xacro --inorder $(find p_mcarvalho_description)/urdf/tp3_p_mcarvalho_fnr.urdf.xacro player_name:=$(arg player_name) player_color:=$(arg player_color)" />
+        </group>
+        <group unless="$(arg fnr)">
+            <param name="robot_description" command="$(find xacro)/xacro --inorder $(find p_mcarvalho_description)/urdf/tp3_p_mcarvalho.urdf.xacro player_name:=$(arg player_name) player_color:=$(arg player_color)" />
+        </group>
         <!--Bloco 3: Lançar robot state publisher.-->
         <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"/>
 
@@ -27,8 +31,12 @@
 
         <group if="$(arg visualize)">
             <!--Bloco 5: Include do visualize.launch-->
-            <include file="$(find p_mcarvalho_bringup)/launch/tp3_$(arg player_name)_visualize.launch">
-            </include>
+            <group if="$(arg fnr)">
+                <include file="$(find p_mcarvalho_bringup)/launch/tp3_visualize_fnr.launch"/>
+            </group>
+            <group unless="$(arg fnr)">
+                <include file="$(find p_mcarvalho_bringup)/launch/tp3_visualize.launch"/>
+            </group>
 
             <!--Bloco 6: Include do gmapping.launch-->
             <include file="$(find p_mcarvalho_bringup)/launch/gmapping.launch">

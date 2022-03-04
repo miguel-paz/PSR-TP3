@@ -1,5 +1,5 @@
 <launch>
     <!-- Launch rviz, loading configuration file -->
     <node name="rviz" pkg="rviz" type="rviz"
-          args="--display-config $(find p_mcarvalho_bringup)/config/tp3_p_mcarvalho_visualize.rviz" required="false"/>
+          args="--display-config $(find p_mcarvalho_bringup)/config/tp3_visualize_fnr.rviz" required="false"/>
 </launch>

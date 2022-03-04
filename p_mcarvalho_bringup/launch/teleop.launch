@@ -1,6 +1,13 @@
 <launch>
     <arg name="model" default="$(env TURTLEBOT3_MODEL)" doc="model type [burger, waffle, waffle_pi]"/>
+    <arg name="fnr" default="false"/>
 
-    <node pkg="p_mcarvalho_player" type="teleop_movement_processing.py" name="myteleop"  output="screen"/>
+    <group if="$(arg fnr)">
+        <node pkg="p_mcarvalho_player" type="teleop_movement_processing_fnr.py" name="myteleop"  output="screen"/>
+    </group>
+    <group unless="$(arg fnr)">
+        <node pkg="p_mcarvalho_player" type="teleop_movement_processing.py" name="myteleop"  output="screen"/>
+    </group>
+
 
 </launch>
