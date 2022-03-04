@@ -1,4 +1,4 @@
-# Programação em Sistemas Robóticos - Trabalho 3 - Team Hunt e Corrida Manual na FNR
+# Programação em Sistemas Robóticos - Trabalho 3 ; Grupo 14 - Team Hunt e Corrida Manual na FNR
 
 ## Sumário
 
