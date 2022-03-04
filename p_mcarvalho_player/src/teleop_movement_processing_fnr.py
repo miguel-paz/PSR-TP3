@@ -35,7 +35,7 @@ class Teleop_Server:
         self.control_linear_vel  = 0.0
         self.control_angular_vel = 0.0
         self.Turning = False
-        self.pub = rospy.Publisher('teleop_vel', Twist, queue_size=1)
+        self.pub = rospy.Publisher('/p_mcarvalho/cmd_vel', Twist, queue_size=1)
 
     def makeSimpleProfile(self, output, input, slop):
         if input > output:
@@ -62,9 +62,7 @@ def main():
     rospy.init_node('teleop_processing_node', anonymous=False)
 
     rospy.Subscriber('/remote_teleop', Twist, callback=teleop_server.callbackTeleopReceived)
-    #rospy.Subscriber('/scan', LaserScan, callback=teleop_server.callbackMessageReceived)
 
-    # spin() simply keeps python from exiting until this node is stopped
     rospy.spin()
 
 
