@@ -74,6 +74,15 @@ roslaunch p_mcarvalho_bringup teleop.launch
 ## Lançamento do nó coach:
 rosrun p_mcarvalho_bringup coach.py __name:=<"cor da equipa coached">_coach
 
+## Lançamento do Django:
+`cd TP3_Django`
+(Ativar o ambiente virtual fornecido) `source psr_venv/bin/activate`
+`cd psr_tp3_test
+python manage.py runserver`
+(Aceder ao 127.0.0.1:8000/admin)
+(Inserir as credenciais: username: psr_14
+                         password: psr4life)
+
 ### Video example
 https://youtu.be/8Gsxrn0dBHs
 
