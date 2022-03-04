@@ -29,6 +29,18 @@ Quanto aos estados de teleop e de goal, o primeiro refere-se ao controlo manual 
 
 O modelo utilizado neste trabalho foi o turtlebot3 waffle pi. Optámos por meter ,além de uma camâra frontal, uma camâra dianteira para ser mais realista.
 
+## Configuração do Nó Coach
+
+O nó coach foi criado para receber a informação sobre os robôs da equipa que está a coordenar e recebe mensagens do tipo Coach_msg:
+* string sender
+* string type
+* string content
+* sensor_msgs/Image front_camera
+* sensor_msgs/Image back_camera
+
+## Configuração do Django
+
+Neste caso, este está configurado para quando o nó coach, ao receber novas mensagens, guarda a informação sobre o robô que enviou a mensagem, o estado anterior que este detinha, o seu estado atual e a razão que o fez alterar.
 
 # Códigos para iniciar o jogo da apanhada
 
@@ -61,6 +73,9 @@ roslaunch p_mcarvalho_bringup teleop.launch
 
 ## Lançamento do nó coach:
 rosrun p_mcarvalho_bringup coach.py __name:=<"cor da equipa coached">_coach
+
+### Video example
+https://youtu.be/8Gsxrn0dBHs
 
 
 # Códigos para iniciar a corrida contra relógio
