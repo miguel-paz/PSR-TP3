@@ -54,3 +54,5 @@ rosrun p_mcarvalho_player primal_agent __name:="nome do robô"
 #Condução manual através de telemóvel: 
 roslaunch p_mcarvalho_bringup teleop.launch
 
+#Lançamento do nó coach:
+rosrun p_mcarvalho_bringup coach.py __name:=red_coach
