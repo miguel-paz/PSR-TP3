@@ -14,7 +14,7 @@
     
 ## Explicação da configuração do jogo
 
-![Image](https://cdn.discordapp.com/attachments/943226390097035335/949264559351398400/PSR_INITIAL_DRAFT.drawio1.png)
+![Image](https://cdn.discordapp.com/attachments/943226390097035335/949265268012630056/PSR_INITIAL_DRAFT.drawio.png)
 
 A figura anterior, explica o processo de mudança de estados dos robôs e como se processa a mudança. 
 O estado de wandering é o estado em que o robô simplesmente vagueia pelo mapa, não colidindo com objetos e obstáculos que possam aparecer. Se um robô avistar a sua 
