@@ -29,28 +29,28 @@ O modelo utilizado neste trabalho foi o turtlebot3 waffle pi. Optámos por meter
 
 ## Códigos para iniciar o jogo da apanhada
 
-#Arenas
+#Arenas:
 roslaunch p_mcarvalho_bringup tp3_gazebo_arena_1.launch
 roslaunch p_mcarvalho_bringup tp3_gazebo_arena_2.launch
 roslaunch p_mcarvalho_bringup tp3_gazebo_arena_3.launch
 
-#Pista FNR
+#Pista FNR:
 roslaunch p_mcarvalho_bringup fnr_map.launch
 
-#Apenas um robô
+#Apenas um robô:
 roslaunch p_mcarvalho_bringup tp3_bringup.launch
 
-#3 Robôs e Árbitro em terminal à parte
+#3 Robôs e Árbitro em terminal à parte:
 roslaunch p_mcarvalho_bringup tp3_bringup_multiple.launch
 
-#Apenas Árbitro
+#Apenas Árbitro:
 rosrun th_referee th_referee.py
 
-#Lançamento de inteligência artifical de robôs
+#Lançamento de inteligência artifical de robôs: 
 rosrun p_mcarvalho_player primal_agent __name:="nome do robô"
-p.e:
-rosrun p_mcarvalho_player primal_agent __name:=red1
+ p.e:
+ rosrun p_mcarvalho_player primal_agent __name:=red1
 
-#Condução manual através de telemóvel
+#Condução manual através de telemóvel: 
 roslaunch p_mcarvalho_bringup teleop.launch
 
