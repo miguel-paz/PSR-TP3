@@ -27,32 +27,49 @@ Quanto aos estados de teleop e de goal, o primeiro refere-se ao controlo manual 
 O modelo utilizado neste trabalho foi o turtlebot3 waffle pi. Optámos por meter ,além de uma camâra frontal, uma camâra dianteira para ser mais realista.
 
 
-## Códigos para iniciar o jogo da apanhada
+# Códigos para iniciar o jogo da apanhada
 
-#Arenas:
-roslaunch p_mcarvalho_bringup tp3_gazebo_arena_1.launch
-roslaunch p_mcarvalho_bringup tp3_gazebo_arena_2.launch
-roslaunch p_mcarvalho_bringup tp3_gazebo_arena_3.launch
+## Arenas:
+  roslaunch p_mcarvalho_bringup tp3_gazebo_arena_1.launch
 
-#Pista FNR:
-roslaunch p_mcarvalho_bringup fnr_map.launch
+  roslaunch p_mcarvalho_bringup tp3_gazebo_arena_2.launch
 
-#Apenas um robô:
-roslaunch p_mcarvalho_bringup tp3_bringup.launch
+  roslaunch p_mcarvalho_bringup tp3_gazebo_arena_3.launch
 
-#3 Robôs e Árbitro em terminal à parte:
-roslaunch p_mcarvalho_bringup tp3_bringup_multiple.launch
 
-#Apenas Árbitro:
-rosrun th_referee th_referee.py
+## 3 Robôs e Árbitro em terminal à parte:
+  roslaunch p_mcarvalho_bringup tp3_bringup_multiple.launch
 
-#Lançamento de inteligência artifical de robôs: 
-rosrun p_mcarvalho_player primal_agent __name:="nome do robô"
+
+## Apenas Árbitro:
+  rosrun th_referee th_referee.py
+
+
+## Lançamento de inteligência artifical de robôs: 
+rosrun p_mcarvalho_player primal_agent __name:=<"nome do robô">
+
  p.e:
  rosrun p_mcarvalho_player primal_agent __name:=red1
 
-#Condução manual através de telemóvel: 
+
+## Condução manual através de telemóvel: 
 roslaunch p_mcarvalho_bringup teleop.launch
 
-#Lançamento do nó coach:
-rosrun p_mcarvalho_bringup coach.py __name:=red_coach
+
+## Lançamento do nó coach:
+rosrun p_mcarvalho_bringup coach.py __name:=<"cor da equipa coached">_coach
+
+
+# Códigos para iniciar a corrida contra relógio
+
+
+## Pista FNR:
+roslaunch p_mcarvalho_bringup fnr_map.launch
+
+
+## Launch de um robô:
+roslaunch p_mcarvalho_bringup tp3_bringup.launch fnr:=true
+
+
+## Condução manual através de telemóvel: 
+roslaunch p_mcarvalho_bringup teleop.launch fnr:=true
